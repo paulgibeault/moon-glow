@@ -18,7 +18,7 @@ import {
   exploreState, ensureExplore, shuffleAll, setSeeds, pushSeedHistory, effectiveConfig,
 } from './seed-explore.js';
 import { buildGameRecord, recordGame } from './telemetry.js';
-import { sfx, matchFreq } from './sfx.js';
+import { sfx, playMatch, startBed, stopBed } from './sfx.js';
 
 await Arcade.ready;
 
@@ -693,6 +693,15 @@ let sfxPrevShotsUntil = 0;
 
 function emitGameSfx(g) {
   if (!g) return;
+
+  // Ambient bed (design §8) — river water and irregular taiko under active
+  // play. Started on the first shot rather than at level load, so nothing asks
+  // for audio before the player has touched anything, and stopped once the
+  // level resolves. Both calls are idempotent, so running them every frame is
+  // free, and both are no-ops on the fallback audio path.
+  if (g.phase === PHASE.WIN || g.phase === PHASE.GAME_OVER) stopBed(1.5);
+  else if ((g.shotsFired | 0) > 0) startBed();
+
   // A freshly loaded game instance: adopt its counters as the baseline without
   // firing (a level load / restore is not a gameplay event).
   if (sfxTrackedGame !== g) {
@@ -716,7 +725,7 @@ function emitGameSfx(g) {
 
   // Match / clear — pitch rises with the size of the cluster that just popped.
   const poppedDelta = popped - sfxPrevPopped;
-  if (poppedDelta > 0) sfx('match', { freq: matchFreq(poppedDelta) });
+  if (poppedDelta > 0) playMatch(poppedDelta);
 
   // Chain-drop — lanterns cut loose and fall to the river.
   if (dropped > sfxPrevDropped) sfx('drop');

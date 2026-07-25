@@ -44,6 +44,12 @@
   </script>
   <script src="/arcade-sdk.js"></script>
   <script>Arcade.init({ gameId: 'moon-lit' });</script>
+  <!-- Optional SDK companion: the physical-gesture element library that lights
+       up Arcade.audio.graph(). If it 404s (standalone, or a stale cache),
+       js/sfx.js falls back to the archived chiptune spec cues. -->
+  <script src="/arcade-audio.js"></script>
+  <!-- The moon-lit sound pack. Plain script, must load before js/main.js. -->
+  <script src="js/soundpack.js"></script>
 </head>
 <body>
   <canvas id="game"></canvas>

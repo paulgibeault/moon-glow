@@ -6,5 +6,6 @@ node_modules/
 .go.pid
 .go.port
 arcade-sdk.js
+arcade-audio.js
 docs/archive/
 scratch/

@@ -434,13 +434,30 @@ support for `data-theme="light"` and `data-theme="dark"`.
 
 ## 8. Audio direction
 
-> **Implementation note (2026-07-21):** shipped audio (`js/sfx.js`) is
-> synth-only via the launcher's managed `Arcade.audio` (SDK 3.5.0+), not the
-> sample-based instruments this section describes — there is no ambient bed
-> (one-shot voices only, no looping layer) and no manual `audioVolume()`
-> read or `AudioContext` suspend/resume (§10.5/§10.6 below); the SDK owns
-> all of that now. The bullets below remain the *aesthetic* reference —
-> `js/sfx.js` approximates each one with short noise/sine/triangle voices.
+> **Implementation note (2026-07-24):** shipped audio is synthesised, not
+> sampled, but it is no longer synth-*sounding*. `js/soundpack.js` builds each
+> cue as a WebAudio node graph out of physical gestures — friction, contact
+> strike, stick-slip creak, a Karplus–Strong plucked string, collapsing water
+> cavities, inharmonic struck bodies with per-partial decay — and every cue
+> feeds one shared convolution room, so the whole game is heard in a single
+> stone courtyard rather than pasted onto silence. Every cue also varies pitch,
+> timing and layer balance per play from a seeded stream, so no two firings are
+> identical. `js/sfx.js` registers the pack with the launcher's managed
+> `Arcade.audio` (SDK 3.6.0+, plus its optional `/arcade-audio.js` element
+> library). The ambient bed below is delivered, not out of scope: three drifting
+> water layers plus irregular taiko, as a sustained cue that starts on the
+> player's first shot and fades out at win/loss (no koto note in the bed, and
+> the taiko falls every few seconds rather than every ~30s — it reads as a
+> river you are standing beside). There is no manual `audioVolume()` read and
+> no `AudioContext` suspend/resume
+> (§10.5/§10.6 below) — the SDK owns all of that.
+>
+> Two caveats. On a stale cached SDK, or standalone without the element
+> library, `js/sfx.js` silently falls back to the archived single-oscillator
+> chiptune profile (same cue names, no ambient bed) rather than going quiet.
+> And the bullets below remain the aesthetic *reference*, not a checklist: the
+> snap "tak", the ember fizz and the chain-10+ bell harmonic are still not
+> implemented as their own cues.
 
 - **Ambient bed:** soft river water, distant taiko at irregular intervals
   (every ~30s), occasional koto note. No melody, no loop seam.
