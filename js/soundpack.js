@@ -11,10 +11,14 @@
 // Everything is heard in that one space, which is why every cue feeds one
 // shared room (see ROOM below).
 //
+// There is NO sustained layer anywhere in this pack. Between events the game is
+// silent, and that is the ambience: continuous filtered noise, at any level and
+// any filter setting, is heard as hiss or wind, never as a still pond.
+//
 // Register plan, so simultaneous cues occupy different bands instead of masking
 // each other:
-//   blast/flame body 30–200 · bell 60–1200 · wood/rope 120–800 · water 190–820
-//   paper 125–600 · flame front 620–3.2k · ruffle 700–2.2k · insects 3–4.5k
+//   blast sub 22–130 · flame 56–660 · bell 60–1200 · wood/rope 120–800
+//   paper 125–600 · ruffle 700–2.2k · insects 3–4.5k
 //
 // Every cue takes an `r` (seeded random stream) and varies pitch, timing and
 // layer balance per play. No two plays are identical — that is deliberate and
@@ -60,7 +64,7 @@
     'carousel': 0.22,    // the wheel is right in front of you
     'match': 0.32,
     'moonburst': 0.52,   // big, and out in the field rather than in your hands
-    'drop': 0.55,
+    'drop': 0.42,   // drifting away from you, but a cascade must stay defined
     'trellis': 0.30,
     'dead-line-warning': 0.34,
     'menu-click': 0.20,
@@ -76,6 +80,36 @@
   // why they live here as named constants rather than buried in each cue.
   const CONSTANT = 0.022;   // per-shot gestures
   const FREQUENT = 0.048;   // per-clear gestures
+
+  // One lantern going up in flame. Every fire in the game is this gesture at a
+  // different size — a lamp in a cluster, a lamp cut loose and drifting away, a
+  // lamp caught in the Moonburst — so the character is decided once, here.
+  //
+  // The character is: low, and slow to arrive. The band sits under 700 Hz and
+  // is lowpassed hard, the flash runs half a second or more, the onset is a
+  // quarter of that, and the weight underneath swells in with the flame rather
+  // than landing ahead of it. Everything the ear reads as a "pop" — a fast
+  // onset, energy above ~1 kHz, a short body — is deliberately absent, because
+  // this cue fires many times a minute and a pop repeated is a beep.
+  //
+  // `scale` stretches size and depth together, `bright` lifts the band a shade
+  // so several flashes in a row don't stack into one tone.
+  function flash(ctx, o, t, r, opts) {
+    const scale = opts.scale == null ? 1 : opts.scale;
+    const dur = S.between(r, 0.50, 0.66) * scale;
+    S.flare(ctx, o, t, {
+      f0: S.between(r, 520, 660), f1: S.between(r, 170, 220),
+      bright: opts.bright == null ? 1 : opts.bright,
+      lp: opts.lp || 850, Q: 0.8, dur,
+      attack: dur * S.between(r, 0.22, 0.30),
+      gain: opts.gain,
+      weight: opts.weight == null ? 0.7 : opts.weight,
+      wf0: S.between(r, 56, 74) / scale,
+      wAttack: dur * 0.32,
+      seed: (r() * 1e6) | 0,
+    });
+    return dur;
+  }
 
   const CUES = {
     // A lantern climbing away. Paced against the thing on screen: a lamp takes
@@ -169,11 +203,17 @@
     // last, so a large clear is heard as one swelling bloom that goes up rather
     // than as a louder single hit.
     //
-    // Level is the whole design here. Paper catching alight is a soft sound;
-    // this one is a reward that repeats several times a minute for an entire
-    // level, and anything with presence becomes a nag by the third clear. It
-    // sits at FREQUENT, dark (`lp`), with `weight` low enough that the low
-    // pressure pulse is felt and not heard.
+    // A flash of fire, low and soft — not a pop. Three things were making it
+    // pop: the flare sat up around 1.3 kHz where the ear hears onsets sharply,
+    // it was short enough (~0.3s) to be over before it had bloomed, and the
+    // weight underneath punched in ahead of it. So the band is now most of an
+    // octave lower and lowpassed harder, each flash runs ~0.55s, the onset is
+    // slow enough to be a swell, and the low end arrives *with* the flame
+    // (`wAttack`) instead of in front of it.
+    //
+    // Level is the other half of the design. Paper catching alight is a soft
+    // sound, and this one repeats several times a minute for an entire level:
+    // anything with presence becomes a nag by the third clear.
     'match': function (ctx, o, t, p, r) {
       const count = Math.max(3, (p && p.count) | 0 || 3);
       const lamps = Math.min(count, 8);
@@ -182,72 +222,75 @@
       const norm = 1 / (1 + 0.28 * (lamps - 1));
       let at = t;
       for (let i = 0; i < lamps; i++) {
-        S.flare(ctx, o, at, {
-          f0: S.between(r, 1250, 1600), f1: S.between(r, 600, 760),
-          bright: 1 + 0.05 * i, lp: 2600,
-          dur: S.between(r, 0.28, 0.38) * (0.9 + 0.25 * norm),
+        flash(ctx, o, at, r, {
           gain: FREQUENT * norm * (0.95 + 0.26 * i),
-          weight: 0.22, wf0: S.between(r, 130, 170),
-          seed: (r() * 1e6) | 0,
+          bright: 1 + 0.05 * i,
         });
-        at += S.between(r, 0.045, 0.085);
+        at += S.between(r, 0.055, 0.095);
       }
       // A big cluster leaves a low bloom of hot air behind it. Felt, not heard.
       if (lamps >= 5) {
         S.thump(ctx, o, t + 0.09, {
-          f0: S.between(r, 96, 116), f1: 40, dur: 0.55, gain: FREQUENT * 0.4,
-          seed: (r() * 1e6) | 0,
+          f0: S.between(r, 62, 76), f1: 28, dur: 0.85, gain: FREQUENT * 0.6,
+          attack: 0.11, seed: (r() * 1e6) | 0,
         });
       }
-      return at - t + 0.7;
+      return at - t + 1.0;
     },
 
-    // Moonburst — the banked charge detonating inside the field. This is the
-    // one moment in the game that is an explosion rather than a lamp catching
-    // light, and the one cue deliberately allowed to be loud: it happens a
-    // couple of times a level at most, and it is the payoff for banking a
-    // combo. The library's `blast` is the whole event; everything after it is
-    // aftermath.
+    // Moonburst — the banked charge going up inside the field. A fireball, not
+    // a detonation, and the distinction is the entire cue: fuel igniting has no
+    // snap at the front, so `crack` is 0 and the front swells in over ~55 ms.
+    // With a crack on it this read as a firecracker however much bass sat
+    // underneath. What arrives instead is a whump — a wall of low air — with
+    // the ball of flame on top of it and a rumble rolling away across the pond.
+    //
+    // No `tone`, either: the ringing shell the element can add is heard over
+    // water as a struck bell rather than as an explosion.
     'moonburst': function (ctx, o, t, p, r) {
       S.blast(ctx, o, t, {
-        size: S.between(r, 0.95, 1.1), gain: 0.24,
-        f0: S.between(r, 2400, 3000), f1: S.between(r, 190, 240),
-        wf0: S.between(r, 120, 145), bf0: S.between(r, 58, 70),
+        size: S.between(r, 1.2, 1.35), gain: 0.235,
+        crack: 0, attack: S.between(r, 0.045, 0.070), rumble: 1.25,
+        f0: S.between(r, 1300, 1700), f1: S.between(r, 110, 150), lp: 1500,
+        wf0: S.between(r, 92, 112),
         seed: (r() * 1e6) | 0,
       });
-      // lamps going up in the blast's wake, scattered rather than in sequence
-      let at = t + 0.06;
-      for (let i = 0; i < 4; i++) {
-        S.flare(ctx, o, at, {
-          f0: S.between(r, 1250, 1600), f1: S.between(r, 600, 760),
-          bright: 1 + 0.08 * i, lp: 2600, dur: S.between(r, 0.26, 0.36),
-          gain: FREQUENT * S.between(r, 0.5, 0.8), weight: 0.3,
-          seed: (r() * 1e6) | 0,
+      // The ball of fire itself: two big overlapping flashes, the second a beat
+      // later and lower, so the fire keeps growing after the air has hit.
+      flash(ctx, o, t + 0.01, r, { gain: FREQUENT * 1.7, scale: 1.6, weight: 0.9, lp: 1000 });
+      flash(ctx, o, t + S.between(r, 0.09, 0.15), r, { gain: FREQUENT * 1.3, scale: 2.0, weight: 1.0, lp: 900 });
+      // lamps going up in its wake, scattered rather than in sequence, trailing
+      // off into the rumble
+      let at = t + 0.18;
+      for (let i = 0; i < 5; i++) {
+        flash(ctx, o, at, r, {
+          gain: FREQUENT * S.between(r, 0.5, 0.9), bright: 1 + 0.08 * i,
+          scale: S.between(r, 0.8, 1.2),
         });
-        at += S.between(r, 0.05, 0.12);
+        at += S.between(r, 0.07, 0.18);
       }
-      // and what it threw into the water
-      let wet = t + S.between(r, 0.28, 0.40);
-      for (let i = 0; i < 3; i++) {
-        const f0 = S.between(r, 260, 360);
-        S.droplet(ctx, o, wet, { f0, f1: f0 * S.between(r, 4.0, 5.2), dur: 0.04, gain: 0.09, seed: (r() * 1e6) | 0 });
-        wet += S.between(r, 0.06, 0.15);
-      }
-      return 1.6;
+      return 3.0;   // the rumble is most of this
     },
 
-    // A lantern cut loose, falling to the water. Two droplets, the second
-    // offset randomly, so a cascade never sounds like a metronome.
+    // A lantern cut loose. This was a water droplet — the lantern hitting the
+    // river — and a droplet is a contact click plus a fast upward sweep, which
+    // is a *plip*: the sharpest, most out-of-place sound in the game, fired
+    // several at a time on the biggest scoring moments. It burns instead. Same
+    // gesture as a matched lamp, smaller and a touch brighter, because this one
+    // is already alight and drifting away from you as it goes up.
     'drop': function (ctx, o, t, p, r) {
-      const f0 = S.between(r, 280, 380);
-      S.droplet(ctx, o, t, { f0, f1: f0 * S.between(r, 4.2, 5.4), dur: 0.045, gain: 0.20, seed: (r() * 1e6) | 0 });
-      if (r() < 0.75) {
-        const off = S.between(r, 0.05, 0.13);
-        S.droplet(ctx, o, t + off, {
-          f0: f0 * 0.85, f1: f0 * 3.8, dur: 0.038, gain: 0.10, seed: (r() * 1e6) | 0,
+      flash(ctx, o, t, r, {
+        gain: FREQUENT * S.between(r, 0.75, 1.05), scale: S.between(r, 0.7, 0.9),
+        bright: S.between(r, 1.05, 1.18), weight: 0.5,
+      });
+      // Sometimes the flame gutters once more as it falls away.
+      if (r() < 0.55) {
+        flash(ctx, o, t + S.between(r, 0.10, 0.22), r, {
+          gain: FREQUENT * S.between(r, 0.3, 0.5), scale: S.between(r, 0.5, 0.7),
+          bright: S.between(r, 1.1, 1.3), weight: 0.35,
         });
       }
-      return 0.25;
+      return 0.9;
     },
 
     // Rope and wood taking the load as the trellis descends, ending in a
@@ -381,17 +424,19 @@
     }
   }
 
-  // The pond. Almost nothing: a low breath of warm air and the surface barely
-  // moving. Still water, so no river hiss — and no third layer up in the reeds
-  // either: filtered noise in the low kilohertz with a wide slow LFO on its
-  // band is *wind*, however quiet you make it, and a summer night at a pond is
-  // still. What is left is two dark layers with barely any drift, low enough
-  // that the silences between insects are real silences.
+  // The pond — and it is silent. No sustained layer at all.
+  //
+  // This started as three drifting noise streams (a river), then two very quiet
+  // dark ones (a pond), and both were the same mistake in different amounts:
+  // continuous filtered noise is *always* heard, and what it is heard as is
+  // hiss or wind, never as still water. Still water makes no sound. What is
+  // actually out there on a summer night is discrete events with nothing
+  // between them — so that is all this is: a ruffle in the reeds every 15–30
+  // seconds, and the insect layer beside it. The silence between them is the
+  // ambience, and it costs nothing to render.
   function ambient(ctx, o, t, params, r) {
     const dur = (params && params.dur) || 420;
     const collect = [];
-    S.stream(ctx, o, t, dur, { f: 190, Q: 0.5, lp: 420, rate: 0.015, sweep: 32, gain: 0.026, fade: 3.0, seed: 101, collect });
-    S.stream(ctx, o, t, dur, { f: 470, Q: 0.9, lp: 820, rate: 0.038, sweep: 70, gain: 0.008, fade: 2.6, seed: 202, collect });
     let at = t + S.between(r, 5.0, 13.0);
     while (at < t + dur - 1.0) {
       ruffle(ctx, o, at, r, collect);

@@ -462,10 +462,11 @@ support for `data-theme="light"` and `data-theme="dark"`.
 > bank and a tree line — and the bed below is delivered as two sustained cues
 > that start on the player's first shot and fade out at win/loss:
 >
-> - **the pond** — two near-silent dark layers (a low breath of warm air and the
->   surface barely moving) and a rare brief ruffle in the reeds every 15–30
->   seconds. No taiko, no koto note, no river, and no mid-band layer: still
->   water, and anything up in the low kilohertz reads as wind.
+> - **the pond** — nothing sustained at all. It went river → two quiet dark
+>   layers → silence, and the last step was the one that worked: continuous
+>   filtered noise is always *heard*, and always as hiss or wind, never as still
+>   water. What is left is discrete events over silence — a brief ruffle in the
+>   reeds every 15–30 seconds — and the silence between them is the ambience.
 > - **the insects** — rare and brief, a chirp or a few dry ticks roughly every
 >   12 seconds on a calm night. Its density is the game's one dynamic mix
 >   parameter: `setBedPressure()` tracks how close the field has sunk to the
@@ -502,15 +503,24 @@ support for `data-theme="light"` and `data-theme="dark"`.
   its own grain, band, stick-slip rate, mid-turn catch and knock — the wheel is
   the same wheel, but no two turns of it agree.
 - **Snap:** woody "tak."
-- **Match:** a soft flare as the lamp takes flame — bright, airy, swelling
-  rather than punching, with only enough low end to give it weight. One per
-  lamp in the cluster, growing as the fire spreads. (Supersedes the chain-pitch
-  ladder — 3 = base note, 4 = +major third, 5 = +fifth, 6+ = +octave — which
-  survives only in the archived chiptune fallback.)
-- **Moonburst:** an explosion, built the other way round from the match — hard
-  blast front first, boom underneath, then flares and water spray as the
-  aftermath. The loudest moment in the game.
-- **Drop:** cascading water-droplet sounds, one per lantern.
+- **Match:** a deep flash of fire as the lamp takes flame — low (centred under
+  900 Hz), lowpassed, and slow enough to bloom, with the weight underneath
+  arriving *with* the flame. Anything brighter, shorter, or front-loaded reads
+  as a pop, which is what this deliberately is not. One per lamp in the
+  cluster, growing as the fire spreads. (Supersedes the chain-pitch ladder —
+  3 = base note, 4 = +major third, 5 = +fifth, 6+ = +octave — which survives
+  only in the archived chiptune fallback.)
+- **Moonburst:** a fireball, not a detonation — no snap at the front at all
+  (`crack: 0`), so it arrives as a whump of low air with the ball of flame on
+  top and a rumble rolling away across the pond. With a crack on it, it read as
+  a firecracker however much bass sat underneath. No tonal layer either:
+  partials ringing inside a bang are heard as a tone sitting in it rather than
+  as the blast. The loudest moment in the game.
+- **Drop:** the released lanterns burning too — the same flame gesture as a
+  match, smaller and a touch brighter as they drift away. Was a water droplet
+  hitting the river; a droplet is a contact click plus a fast upward sweep,
+  which is a *plip*, and it was the sharpest and most out-of-theme sound in the
+  game, fired several at a time on the biggest scoring moments.
 - **Trellis descent:** rope creak.
 - **Ember formation:** soft fizz.
 - **Win:** single low temple bell, holds for ~3 seconds with overtones.
