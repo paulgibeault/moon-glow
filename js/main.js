@@ -18,7 +18,7 @@ import {
   exploreState, ensureExplore, shuffleAll, setSeeds, pushSeedHistory, effectiveConfig,
 } from './seed-explore.js';
 import { buildGameRecord, recordGame } from './telemetry.js';
-import { sfx, matchFreq } from './sfx.js';
+import { sfx, playMatch } from './sfx.js';
 
 await Arcade.ready;
 
@@ -716,7 +716,7 @@ function emitGameSfx(g) {
 
   // Match / clear — pitch rises with the size of the cluster that just popped.
   const poppedDelta = popped - sfxPrevPopped;
-  if (poppedDelta > 0) sfx('match', { freq: matchFreq(poppedDelta) });
+  if (poppedDelta > 0) playMatch(poppedDelta);
 
   // Chain-drop — lanterns cut loose and fall to the river.
   if (dropped > sfxPrevDropped) sfx('drop');

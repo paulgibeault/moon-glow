@@ -440,7 +440,9 @@ support for `data-theme="light"` and `data-theme="dark"`.
 > (one-shot voices only, no looping layer) and no manual `audioVolume()`
 > read or `AudioContext` suspend/resume (§10.5/§10.6 below); the SDK owns
 > all of that now. The bullets below remain the *aesthetic* reference —
-> `js/sfx.js` approximates each one with short noise/sine/triangle voices.
+> `js/sfx.js` renders each one by synthesising the physics rather than the
+> instrument: noise strike/pluck transients, an inharmonic cast-bell partial
+> series for the win bell, and noise grain under the rope creaks.
 
 - **Ambient bed:** soft river water, distant taiko at irregular intervals
   (every ~30s), occasional koto note. No melody, no loop seam.
