@@ -209,16 +209,23 @@
   // The ambient bed docs/design-concept.md §8 has always asked for: river water
   // and irregular taiko. Impossible on the old engine, which had no sustained
   // voice at all.
+  // Returns a teardown that stops every source it started. A bed outlives the
+  // moment it was triggered, so stopping it has to actually stop it — merely
+  // disconnecting the output leaves the sources scheduled and alive for the
+  // rest of the bed's duration, once per level played.
   function ambient(ctx, o, t, dur, r) {
-    S.stream(ctx, o, t, dur, { f: 780, Q: 0.75, rate: 0.06, sweep: 260, gain: 0.055, fade: 1.6, seed: 101 });
-    S.stream(ctx, o, t, dur, { f: 1900, Q: 1.1, rate: 0.041, sweep: 500, gain: 0.028, fade: 2.0, seed: 202 });
-    S.stream(ctx, o, t, dur, { f: 220, Q: 0.6, rate: 0.023, sweep: 70, gain: 0.030, fade: 2.4, seed: 303 });
+    const collect = [];
+    S.stream(ctx, o, t, dur, { f: 780, Q: 0.75, rate: 0.06, sweep: 260, gain: 0.055, fade: 1.6, seed: 101, collect });
+    S.stream(ctx, o, t, dur, { f: 1900, Q: 1.1, rate: 0.041, sweep: 500, gain: 0.028, fade: 2.0, seed: 202, collect });
+    S.stream(ctx, o, t, dur, { f: 220, Q: 0.6, rate: 0.023, sweep: 70, gain: 0.030, fade: 2.4, seed: 303, collect });
     let at = t + S.between(r, 2.0, 4.0);
     while (at < t + dur - 1.0) {
-      S.thump(ctx, o, at, { f0: S.between(r, 76, 96), f1: 38, dur: 0.5, gain: S.between(r, 0.05, 0.09), seed: (r() * 1e6) | 0 });
+      S.thump(ctx, o, at, { f0: S.between(r, 76, 96), f1: 38, dur: 0.5, gain: S.between(r, 0.05, 0.09), seed: (r() * 1e6) | 0, collect });
       at += S.between(r, 3.5, 7.0);
     }
-    return dur;
+    return function teardown(when) {
+      for (const n of collect) { try { n.stop(when); } catch (e) { /* already ended */ } }
+    };
   }
 
   global.MoonLitPack = { name: 'moon-lit', ROOM, SENDS, CUES, FURIN, BONSHO, ambient, matchFreq };

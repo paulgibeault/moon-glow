@@ -124,27 +124,13 @@ function registerPack(a, p) {
 // signature `fn(ctx, out, when, params, rnd)`, so adapt it here rather than
 // touching the approved pack.
 //
-// It builds its sources and returns, keeping no handles, so we collect them as
-// they are created and hand the SDK a teardown that stops them. Without this,
-// stopping the bed only disconnects its output — the sources stay scheduled
-// (and alive) for the rest of BED_SECONDS, once per level played.
+// `ambient()` returns a teardown that stops the sources it started, which is
+// exactly what the SDK wants back from a sustained cue, so the adapter is only
+// about argument order.
 function bedGraph(p) {
   return function bed(ctx, out, when, params, rnd) {
     const dur = (params && typeof params.dur === 'number') ? params.dur : BED_SECONDS;
-    const sources = [];
-    const makeOsc = ctx.createOscillator;
-    const makeBuf = ctx.createBufferSource;
-    ctx.createOscillator = function () { const n = makeOsc.call(ctx); sources.push(n); return n; };
-    ctx.createBufferSource = function () { const n = makeBuf.call(ctx); sources.push(n); return n; };
-    try {
-      p.ambient(ctx, out, when, dur, rnd);
-    } finally {
-      ctx.createOscillator = makeOsc;
-      ctx.createBufferSource = makeBuf;
-    }
-    return function teardown(at) {
-      for (const n of sources) { try { n.stop(at); } catch (e) { /* already ended */ } }
-    };
+    return p.ambient(ctx, out, when, dur, rnd);
   };
 }
 
