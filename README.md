@@ -49,7 +49,7 @@ without losing your place.
 - Swappable lantern stencil packs (with a "random" pack that mixes designs per shot)
 - Deterministic seeds: same inputs always produce the same board
 - Daily leaderboard via the [Paul's Arcade SDK](https://paulgibeault.github.io/)
-- Environmental audio via `Arcade.audio` — cues synthesised as node graphs from physical gestures (paper, flame, blast, rope, water, bronze, koto string), all sharing one convolution room, over a sustained ambient bed: a quiet pond at night whose insects get busier as the field sinks toward the waterline. Needs SDK 3.6.0+; older clients fall back to the archived chiptune cues.
+- Environmental audio via `Arcade.audio` — cues composed as node graphs from the SDK element library's physical gestures (paper, flame, blast, rope, water, bronze, koto string, insect), all sharing one convolution room, over a sustained ambient bed: a quiet pond at night whose insects get busier as the field sinks toward the waterline. The synthesis lives in the framework; `js/soundpack.js` is design only. Needs SDK 3.7.0; older clients fall back to the archived chiptune cues.
 - Personal bests (best score, best chain, best campaign level) via `Arcade.records`
 
 ## Run locally

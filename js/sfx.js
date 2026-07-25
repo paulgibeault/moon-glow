@@ -3,21 +3,29 @@
 //
 // Two registration paths live here:
 //
-//   GRAPH PATH (SDK >= 3.6.0 with /arcade-audio.js loaded) — the real sound
-//     design. js/soundpack.js holds the pack; every cue is a WebAudio node
-//     graph built from physical-gesture elements (strike, rustle, creak,
-//     pluck, droplet, inharmonic body, thump, stream), and every cue feeds one
-//     shared convolution room so overlapping sounds fuse into one place — a
+//   GRAPH PATH (SDK 3.7.0's /arcade-audio.js loaded) — the real sound design.
+//     js/soundpack.js holds the pack; every cue is a WebAudio node graph built
+//     from physical-gesture elements (strike, rustle, creak, pluck, droplet,
+//     inharmonic body, thump, flare, blast, chirp, stream), and every cue feeds
+//     one shared convolution room so overlapping sounds fuse into one place — a
 //     quiet pond at night — instead of stacking into a pile. That pack was
-//     rendered to an audition
-//     WAV and approved by ear — do not retune it from here.
+//     rendered to an audition WAV and approved by ear — do not retune it from
+//     here.
 //
-//   FALLBACK PATH (older cached SDK, or standalone without /arcade-audio.js) —
-//     the archived chiptune profile, copied verbatim from the launcher's
-//     soundpacks/chiptune/moon-lit.mjs. Single-oscillator spec cues: the only
-//     thing a pre-3.6.0 `Arcade.audio` can play. It exists because a player on
-//     a stale service-worker cache should get the old sound rather than
-//     silence; that is an expected state, not an error, so it is not logged.
+//     NO SYNTHESIS LIVES IN THIS GAME. Every gesture the pack is built from is
+//     an element in the launcher's shared library, and the crossfade that makes
+//     the bed adaptive is `handle.retune()` in the SDK. What belongs to
+//     moon-lit is the design — which gestures, how loud, how far away, how
+//     often — and that is all js/soundpack.js contains. A gesture this game
+//     needs and the library lacks goes into the library.
+//
+//   FALLBACK PATH (older cached SDK/companion, or standalone without
+//     /arcade-audio.js) — the archived chiptune profile, copied verbatim from
+//     the launcher's soundpacks/chiptune/moon-lit.mjs. Single-oscillator spec
+//     cues: the only thing a pre-3.6.0 `Arcade.audio` can play. It exists
+//     because a player on a stale service-worker cache should get the old sound
+//     rather than silence; that is an expected state, not an error, so it is
+//     not logged. See NEEDED_ELEMENTS below for what decides the path.
 //
 // Both paths register the SAME cue names, so every call site in the game works
 // unchanged either way.
@@ -138,14 +146,18 @@ export function stopBed(fade) {
 // itself leans in rather than a warning sound being added on top.
 //
 // A sustained cue schedules its whole timeline up front, so changing density
-// means starting a second insect layer and crossfading the old one out. Only
-// the insects restart; the water underneath is untouched, so there is no seam.
-// Safe to call every frame — quantisation and hysteresis mean a re-schedule
-// happens a handful of times per level at most.
+// means running a second insect layer and fading the first out under it. The
+// SDK owns that (`handle.retune`, 3.7.0+) — the game says what should change
+// and how fast, not how to crossfade it. Only the insects are retuned; the
+// water underneath is untouched, so there is no seam.
+//
+// Safe to call every frame: quantisation and hysteresis above mean an actual
+// retune happens a handful of times per level at most.
 export function setBedPressure(heat) {
-  if (!insectHandle) return;
-  const a = audio();
-  if (!a || typeof a.start !== 'function') return;
+  // No retune on a pre-3.7.0 SDK: the bed simply stays at the density it
+  // started with. That is a quieter loss than any workaround, and this runs in
+  // the game loop, so it must not throw.
+  if (!insectHandle || typeof insectHandle.retune !== 'function') return;
   const h = typeof heat === 'number' && isFinite(heat) ? heat : 0;
 
   let step = heatStep;
@@ -154,44 +166,37 @@ export function setBedPressure(heat) {
   if (step === heatStep) return;
   heatStep = step;
 
-  const prev = insectHandle;
-  insectHandle = a.start(INSECT_CUE, { dur: BED_SECONDS, heat: HEAT_STEPS[step] });
-  try { prev.stop(3.0); } catch (e) { /* never throw at a play-site */ }
+  insectHandle.retune({ dur: BED_SECONDS, heat: HEAT_STEPS[step] }, 3.0);
 }
 
 // ─── registration ───────────────────────────────────────────────────────────
 
 function registerPack(a, p) {
-  // One room for the whole game: the stone courtyard the pack is set in.
+  // One room for the whole game: the pond the pack is set beside.
   a.room(p.ROOM);
   Object.keys(p.CUES).forEach((name) => {
     a.graph(name, p.CUES[name], { send: p.SENDS[name] });
   });
-  a.graph(BED_CUE, bedGraph(p.ambient), { sustained: true, send: BED_SEND });
-  a.graph(INSECT_CUE, bedGraph(p.insects), { sustained: true, send: INSECT_SEND });
-}
-
-// The pack's bed signature is `(ctx, out, t, dur, r, heat)` — dur and heat
-// spelled out rather than bundled into a params object, because the offline
-// renderer calls these directly. The SDK's sustained-cue signature is
-// `fn(ctx, out, when, params, rnd)`, so adapt here rather than bending the
-// approved pack to the SDK's argument order.
-//
-// Each bed returns a teardown that stops the sources it started, which is
-// exactly what the SDK wants back from a sustained cue, so the adapter is only
-// about argument order.
-function bedGraph(fn) {
-  return function bed(ctx, out, when, params, rnd) {
-    const dur = (params && typeof params.dur === 'number') ? params.dur : BED_SECONDS;
-    const heat = (params && typeof params.heat === 'number') ? params.heat : 0;
-    return fn(ctx, out, when, dur, rnd, heat);
-  };
+  // The beds are written in the SDK's own sustained-cue shape —
+  // fn(ctx, out, when, params, rnd) returning a teardown — so they register
+  // directly. There is no adapter here on purpose: an argument-order shim in
+  // the game is a small thing that quietly becomes the place bed behaviour
+  // accumulates.
+  a.graph(BED_CUE, p.ambient, { sustained: true, send: BED_SEND });
+  a.graph(INSECT_CUE, p.insects, { sustained: true, send: INSECT_SEND });
 }
 
 // ─── fallback: the archived chiptune profile ────────────────────────────────
 // Copied verbatim from the launcher's soundpacks/chiptune/moon-lit.mjs, which
 // froze this game's pre-3.6.0 sound (branch audio-retune @ ee7e62b). Keep it in
 // sync with that archive rather than editing it here.
+//
+// Two cue names the graph pack has do not appear below. 'moonburst' is added
+// anyway (see it below): it is the loudest moment in the game and had no
+// archived sound at all, so silence there would be a hole. 'carousel' is not:
+// it is texture layered onto the launch, which already has a cue here, and a
+// second per-shot voice would unbalance a profile that was tuned as a whole.
+// A missing cue name is a silent no-op, which is the right outcome for it.
 
 const MATCH_BASE_HZ = 523.25; // C5
 
@@ -290,17 +295,29 @@ function registerChiptune(a) {
 // Last in the file so every cue table above it is initialised. Runs once at
 // module load, before main.js evaluates.
 
+// The gestures and APIs the pack is built out of. A cached older SDK or
+// element library has `graph()` and `el()` but not these, and a missing element
+// would throw inside a cue at play time — a cue that half-plays is worse than
+// the fallback profile, so the whole graph path is gated on the pack's actual
+// dependencies rather than on a version number.
+const NEEDED_ELEMENTS = [
+  'strike', 'rustle', 'creak', 'droplet', 'body', 'thump', 'pluck', 'stream',
+  'flare', 'blast', 'chirp', 'teardown',
+];
+
 (function registerCues() {
   const a = audio();
   if (!a) return;
 
   const p = pack();
+  const el = (a && typeof a.el === 'function') ? a.el() : null;
   const graphable =
     !!p &&
     typeof a.graph === 'function' &&
     typeof a.room === 'function' &&
-    typeof a.el === 'function' &&
-    a.el() !== null;
+    typeof a.start === 'function' &&
+    el !== null &&
+    NEEDED_ELEMENTS.every((name) => typeof el[name] === 'function');
 
   if (graphable) {
     registerPack(a, p);

@@ -744,7 +744,14 @@ function emitGameSfx(g) {
   const shotsUntil = g.shotsUntilDescent | 0;
 
   // Lantern launch — one per fired shot (covers speed-mode fast-launch too).
-  if (shots > sfxPrevShots) sfx('lantern-launch');
+  // Two gestures, because two things move: the lamp climbing away, and the
+  // launcher wheel turning the next lantern up into the docked position behind
+  // it. The wheel's rotation starts on this same frame (renderer/world.js keys
+  // it off lastLaunchTime), so both fire together.
+  if (shots > sfxPrevShots) {
+    sfx('lantern-launch');
+    sfx('carousel');
+  }
 
   // Match / clear — the lamps catching fire, one flare per lamp. A Moonburst
   // resolves through the same counter but is an explosion, not a clear, so it

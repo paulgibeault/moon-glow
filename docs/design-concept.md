@@ -444,25 +444,43 @@ support for `data-theme="light"` and `data-theme="dark"`.
 > place rather than pasted onto silence. Every cue also varies pitch,
 > timing and layer balance per play from a seeded stream, so no two firings are
 > identical. `js/sfx.js` registers the pack with the launcher's managed
-> `Arcade.audio` (SDK 3.6.0+, plus its optional `/arcade-audio.js` element
+> `Arcade.audio` (SDK 3.7.0, plus its optional `/arcade-audio.js` element
 > library). There is no manual `audioVolume()` read and no `AudioContext`
 > suspend/resume (§10.5/§10.6 below) — the SDK owns all of that.
+>
+> **Where the capability lives (2026-07-24):** in the framework, not here. Every
+> gesture the pack uses is an element in the launcher's shared library —
+> including the three this game's sound design needed and it did not have
+> (`flare`, `blast`, `chirp`) — and the crossfade that makes the bed adaptive is
+> `handle.retune()` in the SDK (3.7.0). `js/soundpack.js` contains design only:
+> which gestures, how loud, how far away, how often. `js/sfx.js` gates the graph
+> path on the elements the pack actually needs, so a half-stale cached library
+> takes the chiptune fallback instead of throwing inside a cue.
 >
 > **The place (2026-07-24):** a quiet tropical pond on a warm summer night, not
 > a stone courtyard. The room is short, dark and late — reflections off a far
 > bank and a tree line — and the bed below is delivered as two sustained cues
 > that start on the player's first shot and fade out at win/loss:
 >
-> - **the pond** — three near-silent drifting layers (a low breath of warm air,
->   the surface barely moving, the far reeds) and a rare brief ruffle in the
->   reeds every 15–30 seconds. No taiko, no koto note, no river: still water.
+> - **the pond** — two near-silent dark layers (a low breath of warm air and the
+>   surface barely moving) and a rare brief ruffle in the reeds every 15–30
+>   seconds. No taiko, no koto note, no river, and no mid-band layer: still
+>   water, and anything up in the low kilohertz reads as wind.
 > - **the insects** — rare and brief, a chirp or a few dry ticks roughly every
 >   12 seconds on a calm night. Its density is the game's one dynamic mix
 >   parameter: `setBedPressure()` tracks how close the field has sunk to the
 >   waterline, and by the endgame the insects answer each other every ~3
 >   seconds, faster and a shade sharper, the way crickets pulse faster when it
->   is warmer. The layer is re-scheduled and crossfaded to change density; the
->   water underneath is never restarted, so there is no seam.
+>   is warmer. Density changes via `handle.retune()`: only the insect layer is
+>   rebuilt, the water underneath is never restarted, so there is no seam.
+>
+> **Levels (2026-07-24):** two gestures fire on every shot (the lamp climbing,
+> the launcher wheel turning) and one on every clear (the flames). All three sit
+> at deliberately low levels — the pack names them `CONSTANT` and `FREQUENT` —
+> because a sound at that repetition rate has to register as texture rather than
+> as an event. Gain is only half of it: each is lowpassed too, since a quiet
+> gesture that still leaks top end reads as hiss, which is more obtrusive than
+> the sound it came from.
 >
 > Two caveats. On a stale cached SDK, or standalone without the element
 > library, `js/sfx.js` silently falls back to the archived single-oscillator
@@ -478,6 +496,11 @@ support for `data-theme="light"` and `data-theme="dark"`.
 - **Lantern release:** one soft gesture, not two — the lamp climbing away,
   paced to its rise (~0.9s) so it does not read as a flick, and mixed well
   under everything else since it fires on every shot.
+- **Launcher carousel:** the bamboo wheel creaking a quarter turn as it brings
+  the next lantern up, slowing into the docked position with it and finishing
+  on the knock of the fork seating. Fires on every shot, so every turn pulls
+  its own grain, band, stick-slip rate, mid-turn catch and knock — the wheel is
+  the same wheel, but no two turns of it agree.
 - **Snap:** woody "tak."
 - **Match:** a soft flare as the lamp takes flame — bright, airy, swelling
   rather than punching, with only enough low end to give it weight. One per

@@ -52,11 +52,12 @@
     { ratio: 4.17, gain: 0.06, decay: 0.45, detune: 9 },
   ];
 
-  // How much of the courtyard each cue sits in. This is a design decision, not
-  // a default: the river is far away and very wet, a lantern is at arm's length,
-  // and a UI click is effectively inside your head and stays nearly dry.
+  // How much of the pond each cue sits in. This is a design decision, not a
+  // default: the water carries a long way, a lantern is at arm's length, and a
+  // UI click is effectively inside your head and stays nearly dry.
   const SENDS = {
     'lantern-launch': 0.28,
+    'carousel': 0.22,    // the wheel is right in front of you
     'match': 0.32,
     'moonburst': 0.52,   // big, and out in the field rather than in your hands
     'drop': 0.55,
@@ -67,46 +68,14 @@
     'game-over': 0.42,
   };
 
-  // One lamp taking flame. Ignition is not a strike — there is no contact, so
-  // there is no click: what you hear is air catching light.
-  //
-  // A flare, not a whop. The difference is almost entirely the envelope and the
-  // register: the noise band is bright and airy and swells over ~60 ms rather
-  // than punching in, and the low pressure pulse underneath is present only for
-  // weight — pushed forward it turns the cue into a thrown-object thud, which
-  // is what a paper lamp catching alight is not. The band still sweeps DOWNWARD
-  // as the ball of light grows, because a bigger cavity resonates lower.
-  //
-  // `size` scales loudness and length, `bright` lifts the band so successive
-  // lamps in a cluster don't stack into one tone.
-  function flare(ctx, o, t, r, size, bright) {
-    const dur = S.between(r, 0.28, 0.38) * (0.9 + 0.25 * size);
-    // the flame front
-    S.rustle(ctx, o, t, {
-      f0: S.between(r, 1300, 1650) * bright,
-      f1: S.between(r, 620, 780),
-      Q: 0.9, dur, gain: 0.13 * size, attack: 0.055, seed: (r() * 1e6) | 0,
-    });
-    // the top of the flare — thinner, faster, and quieter than the front
-    S.rustle(ctx, o, t + 0.01, {
-      f0: S.between(r, 2600, 3200) * bright,
-      f1: S.between(r, 1300, 1700),
-      Q: 1.2, dur: dur * 0.6, gain: 0.045 * size, attack: 0.035, seed: (r() * 1e6) | 0,
-    });
-    // weight only — you should feel this rather than hear it as a hit
-    S.thump(ctx, o, t + 0.01, {
-      f0: S.between(r, 130, 170), f1: S.between(r, 52, 64),
-      dur: dur * 0.9, gain: 0.038 * size, seed: (r() * 1e6) | 0,
-    });
-    // the paper shell speaking briefly as it takes
-    S.body(ctx, o, t + 0.015, {
-      f0: S.between(r, 300, 370) * bright, gain: 0.028 * size,
-      partials: [
-        { ratio: 1.0, gain: 1.0, decay: 0.09, detune: 7, attack: 0.02 },
-        { ratio: 2.31, gain: 0.24, decay: 0.04, detune: 10, attack: 0.014 },
-      ],
-    });
-  }
+  // Two gestures fire on literally every shot — the lamp climbing away and the
+  // wheel turning under it — and one fires on every clear. Anything at that
+  // rate has to be quieter than instinct says: loud enough to register as
+  // texture, quiet enough that you would not be able to say afterwards that you
+  // heard it. These are the levels the whole mix is balanced around, which is
+  // why they live here as named constants rather than buried in each cue.
+  const CONSTANT = 0.022;   // per-shot gestures
+  const FREQUENT = 0.048;   // per-clear gestures
 
   const CUES = {
     // A lantern climbing away. Paced against the thing on screen: a lamp takes
@@ -119,29 +88,92 @@
     // One gesture, not two. An earlier version put a brighter paper-friction
     // layer at the front for the hand letting go; against a lamp that simply
     // drifts upward it read as a separate event before the launch — a double
-    // sound. What is left is the climb alone, soft enough to sit under the
-    // scene rather than announce each shot.
+    // sound. What is left is the climb alone, at CONSTANT: barely there, and
+    // dark. The `lp` matters as much as the gain here — a bandpass leaks enough
+    // top end that a quiet low gesture turns into audible hiss, which is the
+    // one thing that would make this obtrusive at this level.
     'lantern-launch': function (ctx, o, t, p, r) {
       const dur = S.between(r, 0.80, 0.95);
       // the band falls as the lamp recedes from you
       S.rustle(ctx, o, t + 0.02, {
         f0: S.between(r, 500, 600), f1: S.between(r, 270, 330),
-        Q: 1.1, dur, gain: 0.055, attack: dur * 0.62, seed: (r() * 1e6) | 0,
+        Q: 1.1, lp: 900, dur, gain: CONSTANT, attack: dur * 0.62, seed: (r() * 1e6) | 0,
       });
       // warm air under the shell — the same gesture, an octave and a half down,
       // so it thickens the climb instead of following it
       S.rustle(ctx, o, t + 0.03, {
-        f0: 190, f1: 125, Q: 0.7, dur: dur * 0.92, gain: 0.026,
+        f0: 190, f1: 125, Q: 0.7, lp: 400, dur: dur * 0.92, gain: CONSTANT * 0.45,
         attack: dur * 0.58, seed: (r() * 1e6) | 0,
       });
       return dur + 0.2;
     },
 
-    // Lanterns catching fire. One soft flare per lamp in the cluster: the first
-    // takes, and the flame jumps to its neighbours a few tens of milliseconds
-    // apart, each one bigger and a shade brighter than the last, so a large
-    // clear is heard as one swelling bloom that goes up rather than as a louder
-    // single hit.
+    // The launcher wheel turning a quarter revolution to bring the next lantern
+    // up. On screen that is a quintic ease-out over ~2.2s — it accelerates the
+    // instant the shot leaves and settles heavily into the docked position — so
+    // the creak has to slow down with it (`rate1` below the starting `rate`)
+    // and finish on the wooden knock of the fork seating.
+    //
+    // This fires on every single shot, so it lives at CONSTANT with the rest of
+    // the per-shot texture. Repetition is the real risk: bamboo, two forks and
+    // a hub is one small mechanism, and a mechanism that makes the same noise
+    // every turn stops being furniture and starts being a beep. So each turn
+    // pulls its own grain (band, Q, stick-slip rate and decay), sometimes
+    // catches once mid-turn, and seats with a knock that is sometimes barely
+    // there — the wheel is the same wheel, but no two turns of it agree.
+    'carousel': function (ctx, o, t, p, r) {
+      const dur = S.between(r, 0.85, 1.15);
+      const f0 = S.between(r, 190, 320);          // where this turn's grain sits
+      const rate = S.between(r, 1.5, 2.4);        // fast while it accelerates…
+      S.creak(ctx, o, t, {
+        f0, f1: f0 * S.between(r, 0.62, 0.80),
+        Q: S.between(r, 5.5, 9.0), lp: S.between(r, 700, 1100),
+        // The two lowpass stages that keep bamboo from reading as hiss also
+        // take real level with them, hence the multiplier: this lands the wheel
+        // just under the lamp climbing away from it.
+        dur, gain: CONSTANT * 1.5 * S.between(r, 0.85, 1.25),
+        rate, rate1: rate * S.between(r, 0.18, 0.35),  // …slowing as it settles
+        attack: dur * S.between(r, 0.12, 0.25),
+        seed: (r() * 1e6) | 0,
+      });
+      // A grain catching partway round. Not every turn, and never at the same
+      // point in the rotation.
+      if (r() < 0.55) {
+        const at = t + dur * S.between(r, 0.25, 0.6);
+        S.creak(ctx, o, at, {
+          f0: f0 * S.between(r, 1.15, 1.6), Q: S.between(r, 8, 13), lp: 1300,
+          dur: S.between(r, 0.06, 0.14), gain: CONSTANT * S.between(r, 0.5, 0.9),
+          rate: S.between(r, 2.0, 3.4), attack: 0.01, seed: (r() * 1e6) | 0,
+        });
+      }
+      // The fork seating. Wood on wood, and quiet — the wheel is heavy and the
+      // stop is cushioned by the rope binding at the hub.
+      if (r() < 0.85) {
+        const at = t + dur * S.between(r, 0.88, 0.98);
+        const knock = CONSTANT * S.between(r, 0.6, 1.1);
+        S.strike(ctx, o, at, { dur: 0.006, hp: S.between(r, 700, 1100), gain: knock * 0.7, seed: (r() * 1e6) | 0 });
+        S.body(ctx, o, at, {
+          f0: S.between(r, 150, 210), gain: knock,
+          partials: [
+            { ratio: 1.0, gain: 1.0, decay: S.between(r, 0.06, 0.13), detune: 4 },
+            { ratio: 2.4, gain: 0.28, decay: S.between(r, 0.03, 0.07), detune: 7 },
+          ],
+        });
+      }
+      return dur + 0.2;
+    },
+
+    // Lanterns catching fire — the library's `flare`, one per lamp in the
+    // cluster. The first takes, and the flame jumps to its neighbours a few
+    // tens of milliseconds apart, each one bigger and a shade brighter than the
+    // last, so a large clear is heard as one swelling bloom that goes up rather
+    // than as a louder single hit.
+    //
+    // Level is the whole design here. Paper catching alight is a soft sound;
+    // this one is a reward that repeats several times a minute for an entire
+    // level, and anything with presence becomes a nag by the third clear. It
+    // sits at FREQUENT, dark (`lp`), with `weight` low enough that the low
+    // pressure pulse is felt and not heard.
     'match': function (ctx, o, t, p, r) {
       const count = Math.max(3, (p && p.count) | 0 || 3);
       const lamps = Math.min(count, 8);
@@ -150,13 +182,20 @@
       const norm = 1 / (1 + 0.28 * (lamps - 1));
       let at = t;
       for (let i = 0; i < lamps; i++) {
-        flare(ctx, o, at, r, norm * (0.95 + 0.26 * i), 1 + 0.05 * i);
+        S.flare(ctx, o, at, {
+          f0: S.between(r, 1250, 1600), f1: S.between(r, 600, 760),
+          bright: 1 + 0.05 * i, lp: 2600,
+          dur: S.between(r, 0.28, 0.38) * (0.9 + 0.25 * norm),
+          gain: FREQUENT * norm * (0.95 + 0.26 * i),
+          weight: 0.22, wf0: S.between(r, 130, 170),
+          seed: (r() * 1e6) | 0,
+        });
         at += S.between(r, 0.045, 0.085);
       }
-      // A big cluster leaves a low bloom of hot air behind it.
+      // A big cluster leaves a low bloom of hot air behind it. Felt, not heard.
       if (lamps >= 5) {
         S.thump(ctx, o, t + 0.09, {
-          f0: S.between(r, 96, 116), f1: 40, dur: 0.55, gain: 0.055,
+          f0: S.between(r, 96, 116), f1: 40, dur: 0.55, gain: FREQUENT * 0.4,
           seed: (r() * 1e6) | 0,
         });
       }
@@ -165,37 +204,26 @@
 
     // Moonburst — the banked charge detonating inside the field. This is the
     // one moment in the game that is an explosion rather than a lamp catching
-    // light, so it is built the other way round from 'match': the blast front
-    // arrives first and hard, the low end carries it, and the flames are the
-    // aftermath rather than the event.
+    // light, and the one cue deliberately allowed to be loud: it happens a
+    // couple of times a level at most, and it is the payoff for banking a
+    // combo. The library's `blast` is the whole event; everything after it is
+    // aftermath.
     'moonburst': function (ctx, o, t, p, r) {
-      // the crack — the only part of the pack with a genuinely hard onset
-      S.strike(ctx, o, t, { dur: 0.035, hp: 260, gain: 0.26, seed: (r() * 1e6) | 0 });
-      S.strike(ctx, o, t + 0.004, { dur: 0.012, hp: 2200, gain: 0.11, seed: (r() * 1e6) | 0 });
-      // the blast front, sweeping the whole band downward as it expands
-      S.rustle(ctx, o, t, {
-        f0: S.between(r, 2400, 3000), f1: S.between(r, 180, 240),
-        Q: 0.65, dur: S.between(r, 0.50, 0.62), gain: 0.20, attack: 0.008,
+      S.blast(ctx, o, t, {
+        size: S.between(r, 0.95, 1.1), gain: 0.24,
+        f0: S.between(r, 2400, 3000), f1: S.between(r, 190, 240),
+        wf0: S.between(r, 120, 145), bf0: S.between(r, 58, 70),
         seed: (r() * 1e6) | 0,
-      });
-      // the boom under it
-      S.thump(ctx, o, t, {
-        f0: S.between(r, 120, 145), f1: 30, dur: S.between(r, 0.85, 1.05),
-        gain: 0.24, seed: (r() * 1e6) | 0,
-      });
-      // the shell of hot air left behind, sagging as it cools
-      S.body(ctx, o, t + 0.02, {
-        f0: S.between(r, 58, 70), gain: 0.10,
-        partials: [
-          { ratio: 1.0, gain: 1.0, decay: 1.30, detune: 11, attack: 0.03 },
-          { ratio: 2.47, gain: 0.30, decay: 0.55, detune: 15, attack: 0.02 },
-          { ratio: 4.13, gain: 0.12, decay: 0.28, detune: 19, attack: 0.015 },
-        ],
       });
       // lamps going up in the blast's wake, scattered rather than in sequence
       let at = t + 0.06;
       for (let i = 0; i < 4; i++) {
-        flare(ctx, o, at, r, S.between(r, 0.35, 0.55), 1 + 0.08 * i);
+        S.flare(ctx, o, at, {
+          f0: S.between(r, 1250, 1600), f1: S.between(r, 600, 760),
+          bright: 1 + 0.08 * i, lp: 2600, dur: S.between(r, 0.26, 0.36),
+          gain: FREQUENT * S.between(r, 0.5, 0.8), weight: 0.3,
+          seed: (r() * 1e6) | 0,
+        });
         at += S.between(r, 0.05, 0.12);
       }
       // and what it threw into the water
@@ -306,21 +334,18 @@
     },
   };
 
-  // ── the bed ───────────────────────────────────────────────────────────────
-  // Two sustained cues rather than one, because they change on different
-  // clocks: the pond never varies, and the insects answer the pressure of the
-  // endgame. Keeping them separate means pressure can be re-scheduled without
-  // restarting the water, which would put an audible seam under the level's
-  // tensest moment.
+  // ── the beds ──────────────────────────────────────────────────────────────
+  // Sustained cues, in the SDK's own shape: fn(ctx, out, when, params, rnd)
+  // returning a teardown. Two of them rather than one, because they change on
+  // different clocks — the pond never varies, and the insects answer the
+  // pressure of the endgame. Keeping them separate means the insect layer can
+  // be retuned (SDK 3.7.0+) without restarting the water, which would put an
+  // audible seam under the level's tensest moment.
   //
-  // Both return a teardown that stops every source they started. A bed outlives
-  // the moment it was triggered, so stopping it has to actually stop it —
-  // merely disconnecting the output leaves the sources scheduled and alive for
-  // the rest of the bed's duration, once per level played.
-
-  const stopAll = (collect) => function teardown(when) {
-    for (const n of collect) { try { n.stop(when); } catch (e) { /* already ended */ } }
-  };
+  // `S.teardown(collect)` is the library's standard teardown: a bed outlives
+  // the moment it was triggered, so stopping it has to actually stop its
+  // sources — merely disconnecting the output leaves them scheduled and alive
+  // for the rest of the bed's duration, once per level played.
 
   // Something small shifting in the reeds — a wing, a leaf, a frog resettling.
   // Brief and unhurried: it is over before you have decided what it was.
@@ -340,27 +365,6 @@
         seed: (r() * 1e6) | 0, collect,
       });
     }
-  }
-
-  // A cricket's chirp is a train of short pure-ish pulses, not a tone: 2–5 of
-  // them a few tens of milliseconds apart. Real crickets pulse faster when it
-  // is warmer, which is the lever `heat` pulls — the same insect, more urgent.
-  function chirp(ctx, o, t, r, heat, collect) {
-    const f = S.between(r, 3150, 4050) * (1 + 0.06 * heat);
-    const pulses = 2 + ((r() * 4) | 0);
-    const step = S.between(r, 0.034, 0.050) / (1 + 0.35 * heat);
-    const gain = S.between(r, 0.040, 0.062) * (1 + 0.25 * heat);
-    for (let i = 0; i < pulses; i++) {
-      S.body(ctx, o, t + i * step, {
-        f0: f * S.cents(r, 12), gain,
-        partials: [
-          { ratio: 1.0, gain: 1.0, decay: 0.016, detune: 9, attack: 0.004 },
-          { ratio: 2.02, gain: 0.16, decay: 0.009, detune: 14, attack: 0.003 },
-        ],
-        collect,
-      });
-    }
-    return pulses * step;
   }
 
   // The other voice out there: a dry tick, two or three of them, no pitch.
@@ -383,7 +387,8 @@
   // band is *wind*, however quiet you make it, and a summer night at a pond is
   // still. What is left is two dark layers with barely any drift, low enough
   // that the silences between insects are real silences.
-  function ambient(ctx, o, t, dur, r) {
+  function ambient(ctx, o, t, params, r) {
+    const dur = (params && params.dur) || 420;
     const collect = [];
     S.stream(ctx, o, t, dur, { f: 190, Q: 0.5, lp: 420, rate: 0.015, sweep: 32, gain: 0.026, fade: 3.0, seed: 101, collect });
     S.stream(ctx, o, t, dur, { f: 470, Q: 0.9, lp: 820, rate: 0.038, sweep: 70, gain: 0.008, fade: 2.6, seed: 202, collect });
@@ -392,26 +397,39 @@
       ruffle(ctx, o, at, r, collect);
       at += S.between(r, 13.0, 32.0);
     }
-    return stopAll(collect);
+    return S.teardown(collect);
   }
 
-  // The insects, as a layer of their own. `heat` 0..1 is the game's pressure:
-  // at 0 this is a rare chirp every ten or twenty seconds and the night reads
-  // as empty; near 1 they answer each other every couple of seconds, faster and
-  // a little sharper. Nothing else about the mix changes, which is what keeps
-  // it felt rather than noticed.
-  function insects(ctx, o, t, dur, r, heat) {
+  // The insects, as a layer of their own. `params.heat` 0..1 is the game's
+  // pressure: at 0 this is a rare chirp every ten or twenty seconds and the
+  // night reads as empty; near 1 they answer each other every couple of
+  // seconds, faster and a little sharper — real crickets stridulate faster when
+  // it is warm, which is why the same insect can carry the tension without any
+  // other part of the mix changing. Nothing here announces itself, which is
+  // what keeps it felt rather than noticed.
+  function insects(ctx, o, t, params, r) {
+    const dur = (params && params.dur) || 420;
+    const heat = params && typeof params.heat === 'number' ? params.heat : 0;
     const collect = [];
-    const h = Math.max(0, Math.min(1, heat == null ? 0 : heat));
+    const h = Math.max(0, Math.min(1, heat));
     const spacing = 1 / (1 + 3.2 * h);
     let at = t + S.between(r, 1.5, 7.0) * spacing;
     while (at < t + dur - 0.5) {
-      if (r() < 0.72) chirp(ctx, o, at, r, h, collect);
-      else ticks(ctx, o, at, r, h, collect);
+      if (r() < 0.72) {
+        S.chirp(ctx, o, at, {
+          f: S.between(r, 3150, 4050) * (1 + 0.06 * h) * S.cents(r, 12),
+          pulses: 2 + ((r() * 4) | 0),
+          step: S.between(r, 0.034, 0.050) / (1 + 0.35 * h),
+          gain: S.between(r, 0.040, 0.062) * (1 + 0.25 * h),
+          collect,
+        });
+      } else {
+        ticks(ctx, o, at, r, h, collect);
+      }
       at += S.between(r, 7.0, 21.0) * spacing;
     }
-    return stopAll(collect);
+    return S.teardown(collect);
   }
 
-  global.MoonLitPack = { name: 'moon-lit', ROOM, SENDS, CUES, BONSHO, ambient, insects, ruffle, chirp, flare };
+  global.MoonLitPack = { name: 'moon-lit', ROOM, SENDS, CUES, BONSHO, ambient, insects, ruffle };
 })(typeof window !== 'undefined' ? window : globalThis);
