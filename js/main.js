@@ -18,7 +18,7 @@ import {
   exploreState, ensureExplore, shuffleAll, setSeeds, pushSeedHistory, effectiveConfig,
 } from './seed-explore.js';
 import { buildGameRecord, recordGame } from './telemetry.js';
-import { sfx, playMatch, startBed, stopBed } from './sfx.js';
+import { sfx, playMatch, startBed, stopBed, setBedPressure } from './sfx.js';
 
 await Arcade.ready;
 
@@ -691,16 +691,39 @@ let sfxPrevDropped = 0;
 let sfxPrevPhase = null;
 let sfxPrevShotsUntil = 0;
 
+// How pressed the player is, 0..1, from how far the lowest lantern still has to
+// sink before it touches the water. Four packed rows of clearance is a calm
+// night; one row and the insects are going flat out. Deliberately mode-agnostic
+// — speed mode counts down time rather than shots, but in every mode the field
+// coming down on you is the thing that reads as pressure.
+const CALM_ROWS = 5;
+const PRESSED_ROWS = 1;
+
+function fieldPressure(g) {
+  if (!layout) return 0;
+  let maxY = -Infinity;
+  for (const l of g.board.lanterns) if (l.y > maxY) maxY = l.y;
+  if (maxY === -Infinity) return 0;
+  const rowH = Math.sqrt(3) * layout.size;
+  const rows = (layout.deadLineY - maxY) / rowH;
+  const p = (CALM_ROWS - rows) / (CALM_ROWS - PRESSED_ROWS);
+  return p < 0 ? 0 : (p > 1 ? 1 : p);
+}
+
 function emitGameSfx(g) {
   if (!g) return;
 
-  // Ambient bed (design §8) — river water and irregular taiko under active
+  // Ambient bed (design §8) — the pond, and the insects over it, under active
   // play. Started on the first shot rather than at level load, so nothing asks
   // for audio before the player has touched anything, and stopped once the
-  // level resolves. Both calls are idempotent, so running them every frame is
-  // free, and both are no-ops on the fallback audio path.
-  if (g.phase === PHASE.WIN || g.phase === PHASE.GAME_OVER) stopBed(1.5);
-  else if ((g.shotsFired | 0) > 0) startBed();
+  // level resolves. All three calls are idempotent, so running them every frame
+  // is free, and all three are no-ops on the fallback audio path.
+  if (g.phase === PHASE.WIN || g.phase === PHASE.GAME_OVER) {
+    stopBed(1.5);
+  } else if ((g.shotsFired | 0) > 0) {
+    startBed();
+    setBedPressure(fieldPressure(g));
+  }
 
   // A freshly loaded game instance: adopt its counters as the baseline without
   // firing (a level load / restore is not a gameplay event).
@@ -723,9 +746,15 @@ function emitGameSfx(g) {
   // Lantern launch — one per fired shot (covers speed-mode fast-launch too).
   if (shots > sfxPrevShots) sfx('lantern-launch');
 
-  // Match / clear — pitch rises with the size of the cluster that just popped.
+  // Match / clear — the lamps catching fire, one flare per lamp. A Moonburst
+  // resolves through the same counter but is an explosion, not a clear, so it
+  // takes the blast cue instead; `lastResolution.moonburst` is only meaningful
+  // on the frame the shot resolved, which is exactly this one.
   const poppedDelta = popped - sfxPrevPopped;
-  if (poppedDelta > 0) playMatch(poppedDelta);
+  if (poppedDelta > 0) {
+    if (g.lastResolution && g.lastResolution.moonburst) sfx('moonburst');
+    else playMatch(poppedDelta);
+  }
 
   // Chain-drop — lanterns cut loose and fall to the river.
   if (dropped > sfxPrevDropped) sfx('drop');

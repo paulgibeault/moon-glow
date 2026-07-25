@@ -792,7 +792,11 @@ function resolvePlacement(game, layout, opts = {}) {
     updateComboPowers(game, prevCombo, breakdown, lantern, layout);
   }
 
-  game.lastResolution = { popped, dropped, breakdown };
+  // `moonburst` rides along so the audio layer can tell a detonation from an
+  // ordinary clear on the frame it resolves — the two sound nothing alike, and
+  // the counters alone cannot distinguish them (moonburstUsed increments when
+  // the shot is FIRED, a second before the blast lands).
+  game.lastResolution = { popped, dropped, breakdown, moonburst };
 }
 
 // Charge the two combo powers off this shot's result. Called only in modes

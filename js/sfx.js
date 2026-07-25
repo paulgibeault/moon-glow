@@ -7,8 +7,9 @@
 //     design. js/soundpack.js holds the pack; every cue is a WebAudio node
 //     graph built from physical-gesture elements (strike, rustle, creak,
 //     pluck, droplet, inharmonic body, thump, stream), and every cue feeds one
-//     shared convolution room so overlapping sounds fuse into a courtyard
-//     instead of stacking into a pile. That pack was rendered to an audition
+//     shared convolution room so overlapping sounds fuse into one place — a
+//     quiet pond at night — instead of stacking into a pile. That pack was
+//     rendered to an audition
 //     WAV and approved by ear — do not retune it from here.
 //
 //   FALLBACK PATH (older cached SDK, or standalone without /arcade-audio.js) —
@@ -44,16 +45,29 @@ const pack = () =>
   (typeof window !== 'undefined' && window.MoonLitPack) ? window.MoonLitPack : null;
 
 // ─── ambient bed ────────────────────────────────────────────────────────────
-// docs/design-concept.md §8 has asked for a river-and-taiko bed since the
-// beginning; nothing before SDK 3.6.0 could sustain a voice at all.
+// docs/design-concept.md §8 has asked for an ambient bed since the beginning;
+// nothing before SDK 3.6.0 could sustain a voice at all. It ships as two
+// sustained cues: the pond, which never changes, and the insects, whose density
+// tracks how close the field is to the waterline.
 const BED_CUE = 'ambient';
-// The river is the far side of the courtyard, so it sits deep in the room.
-const BED_SEND = 0.60;
-// The pack schedules the whole bed in one pass — three looped water streams
-// plus every taiko strike — so this is how long a single start() lasts before
-// it fades out on its own. Well past any moon-lit level; the bed is stopped
-// at WIN/GAME_OVER long before it matters.
+const INSECT_CUE = 'insects';
+// The water is all around you; the insects are out across the pond.
+const BED_SEND = 0.45;
+const INSECT_SEND = 0.55;
+// Each cue schedules its whole timeline in one pass — the looped water streams
+// and every ruffle, or every chirp — so this is how long a single start() lasts
+// before it fades out on its own. Well past any moon-lit level; the bed is
+// stopped at WIN/GAME_OVER long before it matters.
 const BED_SECONDS = 420;
+
+// Pressure, quantised. The insect layer can only change density by being
+// re-scheduled, so this has to be a handful of steps rather than a continuous
+// value — and the steps need hysteresis, because the field's clearance crosses
+// back and forth over a threshold every time a cluster pops. Rising uses UP[i],
+// falling uses the lower DOWN[i], so a level held near a boundary stays put.
+const HEAT_STEPS = [0, 0.35, 0.7, 1.0];
+const HEAT_UP = [0.30, 0.58, 0.84];
+const HEAT_DOWN = [0.20, 0.48, 0.74];
 
 // True once the graph path has registered successfully. Everything that only
 // the graph path can do (the bed, the built-in match transient) keys off this.
@@ -69,12 +83,13 @@ export function sfx(name, opts) {
   if (a) a.play(name, opts);
 }
 
-// Match / clear. The pitch of the chime rises with the size of the cluster that
-// popped, per the design's chain-pitch ladder (3 = base note, 4 = +major third,
-// 5 = +fifth, 6+ = +octave).
+// Match / clear — the lanterns catching fire. The graph cue fires one soft burn
+// whop per lamp in the cluster, each bigger than the last, so the sound grows
+// with the clear instead of merely getting louder.
 //
-// The graph cue reads the cluster size directly and builds its own strike
-// transient. The chiptune cue cannot: the SDK merges per-play overrides onto
+// The chiptune cue cannot do that, and keeps the archived chain-pitch ladder
+// instead (3 = base note, 4 = +major third, 5 = +fifth, 6+ = +octave): the SDK
+// merges per-play overrides onto
 // single-spec cues only and ignores them on array cues, so 'match' has to stay
 // a single voice to keep its `freq` override — which is why the archived
 // profile pairs it with a separate 'match-tick' contact click.
@@ -90,6 +105,8 @@ export function playMatch(count) {
 }
 
 let bedHandle = null;
+let insectHandle = null;
+let heatStep = 0;
 
 // Start the ambient bed. Idempotent — safe to call every frame. A silent no-op
 // on the fallback path (the chiptune profile has no bed) and whenever audio is
@@ -99,14 +116,47 @@ export function startBed() {
   const a = audio();
   if (!a || !graphMode || typeof a.start !== 'function') return;
   bedHandle = a.start(BED_CUE, { dur: BED_SECONDS });
+  heatStep = 0;
+  insectHandle = a.start(INSECT_CUE, { dur: BED_SECONDS, heat: HEAT_STEPS[0] });
 }
 
 // Stop the bed, fading over `fade` seconds. Also idempotent.
 export function stopBed(fade) {
-  if (!bedHandle) return;
-  const h = bedHandle;
+  const f = typeof fade === 'number' && fade > 0 ? fade : 1.2;
+  const handles = [bedHandle, insectHandle];
   bedHandle = null;
-  try { h.stop(typeof fade === 'number' && fade > 0 ? fade : 1.2); } catch (e) { /* never throw at a play-site */ }
+  insectHandle = null;
+  heatStep = 0;
+  for (const h of handles) {
+    if (!h) continue;
+    try { h.stop(f); } catch (e) { /* never throw at a play-site */ }
+  }
+}
+
+// How pressed the player is, 0..1 — main.js derives it from how close the field
+// has sunk to the waterline. The insects get busier as it rises: the night
+// itself leans in rather than a warning sound being added on top.
+//
+// A sustained cue schedules its whole timeline up front, so changing density
+// means starting a second insect layer and crossfading the old one out. Only
+// the insects restart; the water underneath is untouched, so there is no seam.
+// Safe to call every frame — quantisation and hysteresis mean a re-schedule
+// happens a handful of times per level at most.
+export function setBedPressure(heat) {
+  if (!insectHandle) return;
+  const a = audio();
+  if (!a || typeof a.start !== 'function') return;
+  const h = typeof heat === 'number' && isFinite(heat) ? heat : 0;
+
+  let step = heatStep;
+  while (step < HEAT_STEPS.length - 1 && h >= HEAT_UP[step]) step++;
+  while (step > 0 && h < HEAT_DOWN[step - 1]) step--;
+  if (step === heatStep) return;
+  heatStep = step;
+
+  const prev = insectHandle;
+  insectHandle = a.start(INSECT_CUE, { dur: BED_SECONDS, heat: HEAT_STEPS[step] });
+  try { prev.stop(3.0); } catch (e) { /* never throw at a play-site */ }
 }
 
 // ─── registration ───────────────────────────────────────────────────────────
@@ -117,20 +167,24 @@ function registerPack(a, p) {
   Object.keys(p.CUES).forEach((name) => {
     a.graph(name, p.CUES[name], { send: p.SENDS[name] });
   });
-  a.graph(BED_CUE, bedGraph(p), { sustained: true, send: BED_SEND });
+  a.graph(BED_CUE, bedGraph(p.ambient), { sustained: true, send: BED_SEND });
+  a.graph(INSECT_CUE, bedGraph(p.insects), { sustained: true, send: INSECT_SEND });
 }
 
-// The pack's `ambient(ctx, out, t, dur, r)` predates the SDK's sustained-cue
-// signature `fn(ctx, out, when, params, rnd)`, so adapt it here rather than
-// touching the approved pack.
+// The pack's bed signature is `(ctx, out, t, dur, r, heat)` — dur and heat
+// spelled out rather than bundled into a params object, because the offline
+// renderer calls these directly. The SDK's sustained-cue signature is
+// `fn(ctx, out, when, params, rnd)`, so adapt here rather than bending the
+// approved pack to the SDK's argument order.
 //
-// `ambient()` returns a teardown that stops the sources it started, which is
+// Each bed returns a teardown that stops the sources it started, which is
 // exactly what the SDK wants back from a sustained cue, so the adapter is only
 // about argument order.
-function bedGraph(p) {
+function bedGraph(fn) {
   return function bed(ctx, out, when, params, rnd) {
     const dur = (params && typeof params.dur === 'number') ? params.dur : BED_SECONDS;
-    return p.ambient(ctx, out, when, dur, rnd);
+    const heat = (params && typeof params.heat === 'number') ? params.heat : 0;
+    return fn(ctx, out, when, dur, rnd, heat);
   };
 }
 
@@ -183,6 +237,17 @@ function registerChiptune(a) {
     .cue('dead-line-warning', [
       { type: 'noise', dur: 0.18, gain: 0.06, attack: 0.015, release: 0.15 },
       { type: 'triangle', freq: 165, toFreq: 120, dur: 0.20, gain: 0.16, attack: 0.01, release: 0.16, delay: 0 },
+    ])
+
+    // Moonburst detonation. The one cue here with no archived counterpart —
+    // the graph pack introduced a blast sound for a gameplay event that had
+    // none, and silence on the fallback path would lose the game's single
+    // loudest moment. Chiptune shape: a noise crack over a sine dropping two
+    // octaves, which is the whole vocabulary this engine has for an explosion.
+    .cue('moonburst', [
+      { type: 'noise', dur: 0.30, gain: 0.16, attack: 0.002, release: 0.28 },
+      { type: 'sine', freq: 150, toFreq: 38, dur: 0.55, gain: 0.20, attack: 0.004, release: 0.50, delay: 0 },
+      { type: 'triangle', freq: 90, toFreq: 45, dur: 0.40, gain: 0.10, attack: 0.01, release: 0.38, delay: 0 },
     ])
 
     // Menu / UI click — soft woody "tak".

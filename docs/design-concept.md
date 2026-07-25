@@ -438,19 +438,31 @@ support for `data-theme="light"` and `data-theme="dark"`.
 > sampled, but it is no longer synth-*sounding*. `js/soundpack.js` builds each
 > cue as a WebAudio node graph out of physical gestures — friction, contact
 > strike, stick-slip creak, a Karplus–Strong plucked string, collapsing water
-> cavities, inharmonic struck bodies with per-partial decay — and every cue
+> cavities, expanding hot air, inharmonic struck bodies with per-partial
+> decay — and every cue
 > feeds one shared convolution room, so the whole game is heard in a single
-> stone courtyard rather than pasted onto silence. Every cue also varies pitch,
+> place rather than pasted onto silence. Every cue also varies pitch,
 > timing and layer balance per play from a seeded stream, so no two firings are
 > identical. `js/sfx.js` registers the pack with the launcher's managed
 > `Arcade.audio` (SDK 3.6.0+, plus its optional `/arcade-audio.js` element
-> library). The ambient bed below is delivered, not out of scope: three drifting
-> water layers plus irregular taiko, as a sustained cue that starts on the
-> player's first shot and fades out at win/loss (no koto note in the bed, and
-> the taiko falls every few seconds rather than every ~30s — it reads as a
-> river you are standing beside). There is no manual `audioVolume()` read and
-> no `AudioContext` suspend/resume
-> (§10.5/§10.6 below) — the SDK owns all of that.
+> library). There is no manual `audioVolume()` read and no `AudioContext`
+> suspend/resume (§10.5/§10.6 below) — the SDK owns all of that.
+>
+> **The place (2026-07-24):** a quiet tropical pond on a warm summer night, not
+> a stone courtyard. The room is short, dark and late — reflections off a far
+> bank and a tree line — and the bed below is delivered as two sustained cues
+> that start on the player's first shot and fade out at win/loss:
+>
+> - **the pond** — three near-silent drifting layers (a low breath of warm air,
+>   the surface barely moving, the far reeds) and a rare brief ruffle in the
+>   reeds every 15–30 seconds. No taiko, no koto note, no river: still water.
+> - **the insects** — rare and brief, a chirp or a few dry ticks roughly every
+>   12 seconds on a calm night. Its density is the game's one dynamic mix
+>   parameter: `setBedPressure()` tracks how close the field has sunk to the
+>   waterline, and by the endgame the insects answer each other every ~3
+>   seconds, faster and a shade sharper, the way crickets pulse faster when it
+>   is warmer. The layer is re-scheduled and crossfaded to change density; the
+>   water underneath is never restarted, so there is no seam.
 >
 > Two caveats. On a stale cached SDK, or standalone without the element
 > library, `js/sfx.js` silently falls back to the archived single-oscillator
@@ -459,12 +471,22 @@ support for `data-theme="light"` and `data-theme="dark"`.
 > snap "tak", the ember fizz and the chain-10+ bell harmonic are still not
 > implemented as their own cues.
 
-- **Ambient bed:** soft river water, distant taiko at irregular intervals
-  (every ~30s), occasional koto note. No melody, no loop seam.
-- **Lantern release:** soft "shh" (paper).
+- **Ambient bed:** a quiet pond at night — still water, rare brief insects, a
+  rare ruffle in the reeds. No melody, no loop seam, and no mid-band noise
+  layer: filtered noise up in the low kilohertz reads as *wind* however quiet
+  it is, and the night here is still.
+- **Lantern release:** one soft gesture, not two — the lamp climbing away,
+  paced to its rise (~0.9s) so it does not read as a flick, and mixed well
+  under everything else since it fires on every shot.
 - **Snap:** woody "tak."
-- **Match (chain pitch):** 3-match = base note; 4 = +major third;
-  5 = +fifth; 6+ = +octave. Chain 10+ adds a temple-bell harmonic.
+- **Match:** a soft flare as the lamp takes flame — bright, airy, swelling
+  rather than punching, with only enough low end to give it weight. One per
+  lamp in the cluster, growing as the fire spreads. (Supersedes the chain-pitch
+  ladder — 3 = base note, 4 = +major third, 5 = +fifth, 6+ = +octave — which
+  survives only in the archived chiptune fallback.)
+- **Moonburst:** an explosion, built the other way round from the match — hard
+  blast front first, boom underneath, then flares and water spray as the
+  aftermath. The loudest moment in the game.
 - **Drop:** cascading water-droplet sounds, one per lantern.
 - **Trellis descent:** rope creak.
 - **Ember formation:** soft fizz.
