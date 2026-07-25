@@ -434,21 +434,93 @@ support for `data-theme="light"` and `data-theme="dark"`.
 
 ## 8. Audio direction
 
-> **Implementation note (2026-07-21):** shipped audio (`js/sfx.js`) is
-> synth-only via the launcher's managed `Arcade.audio` (SDK 3.5.0+), not the
-> sample-based instruments this section describes — there is no ambient bed
-> (one-shot voices only, no looping layer) and no manual `audioVolume()`
-> read or `AudioContext` suspend/resume (§10.5/§10.6 below); the SDK owns
-> all of that now. The bullets below remain the *aesthetic* reference —
-> `js/sfx.js` approximates each one with short noise/sine/triangle voices.
+> **Implementation note (2026-07-24):** shipped audio is synthesised, not
+> sampled, but it is no longer synth-*sounding*. `js/soundpack.js` builds each
+> cue as a WebAudio node graph out of physical gestures — friction, contact
+> strike, stick-slip creak, a Karplus–Strong plucked string, collapsing water
+> cavities, expanding hot air, inharmonic struck bodies with per-partial
+> decay — and every cue
+> feeds one shared convolution room, so the whole game is heard in a single
+> place rather than pasted onto silence. Every cue also varies pitch,
+> timing and layer balance per play from a seeded stream, so no two firings are
+> identical. `js/sfx.js` registers the pack with the launcher's managed
+> `Arcade.audio` (SDK 3.7.0, plus its optional `/arcade-audio.js` element
+> library). There is no manual `audioVolume()` read and no `AudioContext`
+> suspend/resume (§10.5/§10.6 below) — the SDK owns all of that.
+>
+> **Where the capability lives (2026-07-24):** in the framework, not here. Every
+> gesture the pack uses is an element in the launcher's shared library —
+> including the three this game's sound design needed and it did not have
+> (`flare`, `blast`, `chirp`) — and the crossfade that makes the bed adaptive is
+> `handle.retune()` in the SDK (3.7.0). `js/soundpack.js` contains design only:
+> which gestures, how loud, how far away, how often. `js/sfx.js` gates the graph
+> path on the elements the pack actually needs, so a half-stale cached library
+> takes the chiptune fallback instead of throwing inside a cue.
+>
+> **The place (2026-07-24):** a quiet tropical pond on a warm summer night, not
+> a stone courtyard. The room is short, dark and late — reflections off a far
+> bank and a tree line — and the bed below is delivered as two sustained cues
+> that start on the player's first shot and fade out at win/loss:
+>
+> - **the pond** — nothing sustained at all. It went river → two quiet dark
+>   layers → silence, and the last step was the one that worked: continuous
+>   filtered noise is always *heard*, and always as hiss or wind, never as still
+>   water. What is left is discrete events over silence — a brief ruffle in the
+>   reeds every 15–30 seconds — and the silence between them is the ambience.
+> - **the insects** — rare and brief, a chirp or a few dry ticks roughly every
+>   12 seconds on a calm night. Its density is the game's one dynamic mix
+>   parameter: `setBedPressure()` tracks how close the field has sunk to the
+>   waterline, and by the endgame the insects answer each other every ~3
+>   seconds, faster and a shade sharper, the way crickets pulse faster when it
+>   is warmer. Density changes via `handle.retune()`: only the insect layer is
+>   rebuilt, the water underneath is never restarted, so there is no seam.
+>
+> **Levels (2026-07-24):** two gestures fire on every shot (the lamp climbing,
+> the launcher wheel turning) and one on every clear (the flames). All three sit
+> at deliberately low levels — the pack names them `CONSTANT` and `FREQUENT` —
+> because a sound at that repetition rate has to register as texture rather than
+> as an event. Gain is only half of it: each is lowpassed too, since a quiet
+> gesture that still leaks top end reads as hiss, which is more obtrusive than
+> the sound it came from.
+>
+> Two caveats. On a stale cached SDK, or standalone without the element
+> library, `js/sfx.js` silently falls back to the archived single-oscillator
+> chiptune profile (same cue names, no ambient bed) rather than going quiet.
+> And the bullets below remain the aesthetic *reference*, not a checklist: the
+> snap "tak", the ember fizz and the chain-10+ bell harmonic are still not
+> implemented as their own cues.
 
-- **Ambient bed:** soft river water, distant taiko at irregular intervals
-  (every ~30s), occasional koto note. No melody, no loop seam.
-- **Lantern release:** soft "shh" (paper).
+- **Ambient bed:** a quiet pond at night — still water, rare brief insects, a
+  rare ruffle in the reeds. No melody, no loop seam, and no mid-band noise
+  layer: filtered noise up in the low kilohertz reads as *wind* however quiet
+  it is, and the night here is still.
+- **Lantern release:** one soft gesture, not two — the lamp climbing away,
+  paced to its rise (~0.9s) so it does not read as a flick, and mixed well
+  under everything else since it fires on every shot.
+- **Launcher carousel:** the bamboo wheel creaking a quarter turn as it brings
+  the next lantern up, slowing into the docked position with it and finishing
+  on the knock of the fork seating. Fires on every shot, so every turn pulls
+  its own grain, band, stick-slip rate, mid-turn catch and knock — the wheel is
+  the same wheel, but no two turns of it agree.
 - **Snap:** woody "tak."
-- **Match (chain pitch):** 3-match = base note; 4 = +major third;
-  5 = +fifth; 6+ = +octave. Chain 10+ adds a temple-bell harmonic.
-- **Drop:** cascading water-droplet sounds, one per lantern.
+- **Match:** a deep flash of fire as the lamp takes flame — low (centred under
+  900 Hz), lowpassed, and slow enough to bloom, with the weight underneath
+  arriving *with* the flame. Anything brighter, shorter, or front-loaded reads
+  as a pop, which is what this deliberately is not. One per lamp in the
+  cluster, growing as the fire spreads. (Supersedes the chain-pitch ladder —
+  3 = base note, 4 = +major third, 5 = +fifth, 6+ = +octave — which survives
+  only in the archived chiptune fallback.)
+- **Moonburst:** a fireball, not a detonation — no snap at the front at all
+  (`crack: 0`), so it arrives as a whump of low air with the ball of flame on
+  top and a rumble rolling away across the pond. With a crack on it, it read as
+  a firecracker however much bass sat underneath. No tonal layer either:
+  partials ringing inside a bang are heard as a tone sitting in it rather than
+  as the blast. The loudest moment in the game.
+- **Drop:** the released lanterns burning too — the same flame gesture as a
+  match, smaller and a touch brighter as they drift away. Was a water droplet
+  hitting the river; a droplet is a contact click plus a fast upward sweep,
+  which is a *plip*, and it was the sharpest and most out-of-theme sound in the
+  game, fired several at a time on the biggest scoring moments.
 - **Trellis descent:** rope creak.
 - **Ember formation:** soft fizz.
 - **Win:** single low temple bell, holds for ~3 seconds with overtones.
