@@ -9,3 +9,4 @@ arcade-sdk.js
 arcade-audio.js
 docs/archive/
 scratch/
+.arcade-stage/
