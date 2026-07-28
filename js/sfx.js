@@ -34,7 +34,7 @@
 //   A1 — cues are registered ONCE here at module load. Audio is purely local,
 //        so no `await Arcade.ready` is needed; the SDK's classic <script> +
 //        `Arcade.init(...)` in index.html have already run by the time this ES
-//        module evaluates, so `window.Arcade.audio` and `window.MoonLitPack`
+//        module evaluates, so `window.Arcade.audio` and `window.ArcadeSoundPack`
 //        are both present.
 //   A2 — every play-site in the game goes through the `sfx()` wrapper below,
 //        which feature-detects `Arcade.audio`. moon-lit has NO in-game sound
@@ -50,7 +50,7 @@ const audio = () =>
     : null;
 
 const pack = () =>
-  (typeof window !== 'undefined' && window.MoonLitPack) ? window.MoonLitPack : null;
+  (typeof window !== 'undefined' && window.ArcadeSoundPack) ? window.ArcadeSoundPack : null;
 
 // ─── ambient bed ────────────────────────────────────────────────────────────
 // docs/design-concept.md §8 has asked for an ambient bed since the beginning;
