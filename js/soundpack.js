@@ -28,6 +28,15 @@
   'use strict';
   const S = global.ArcadeAudioElements;
 
+  // Every cue here is built from the element library's gestures, so with the
+  // library absent — a stale service-worker cache, or running standalone off
+  // the launcher origin — there is nothing registrable and the game's audio
+  // module takes its fallback path. Bail before dereferencing S: this file is
+  // a plain script, and a throw here would surface as a page error even though
+  // the fallback itself works. Also covers an OLDER library that predates
+  // registerPack, which is the same stale-cache scenario one version on.
+  if (!S || typeof S.registerPack !== 'function') return;
+
   // Outdoors over water: the reflections come from the far bank and the tree
   // line, so they arrive late, arrive dark (foliage absorbs the top end long
   // before stone does) and die quickly. A long bright tail would put the pond
