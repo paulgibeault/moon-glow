@@ -476,5 +476,8 @@
     return S.teardown(collect);
   }
 
-  global.MoonLitPack = { name: 'moon-lit', ROOM, SENDS, CUES, BONSHO, ambient, insects, ruffle };
+  // Published under the framework's well-known handle (arcade-audio.js
+  // registerPack) so the game's audio module and the launcher's soundpack
+  // toolchain both reach it without either side knowing this game's name.
+  S.registerPack({ name: 'moon-lit', ROOM, SENDS, CUES, BONSHO, ambient, insects, ruffle });
 })(typeof window !== 'undefined' ? window : globalThis);
