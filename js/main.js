@@ -717,7 +717,7 @@ function emitGameSfx(g) {
   // play. Started on the first shot rather than at level load, so nothing asks
   // for audio before the player has touched anything, and stopped once the
   // level resolves. All three calls are idempotent, so running them every frame
-  // is free, and all three are no-ops on the fallback audio path.
+  // is free, and all three are no-ops when the graph pack is not registered.
   if (g.phase === PHASE.WIN || g.phase === PHASE.GAME_OVER) {
     stopBed(1.5);
   } else if ((g.shotsFired | 0) > 0) {
