@@ -455,7 +455,7 @@ support for `data-theme="light"` and `data-theme="dark"`.
 > `handle.retune()` in the SDK (3.7.0). `js/soundpack.js` contains design only:
 > which gestures, how loud, how far away, how often. `js/sfx.js` gates the graph
 > path on the elements the pack actually needs, so a half-stale cached library
-> takes the chiptune fallback instead of throwing inside a cue.
+> registers nothing — silence — instead of throwing inside a cue.
 >
 > **The place (2026-07-24):** a quiet tropical pond on a warm summer night, not
 > a stone courtyard. The room is short, dark and late — reflections off a far
@@ -484,11 +484,12 @@ support for `data-theme="light"` and `data-theme="dark"`.
 > the sound it came from.
 >
 > Two caveats. On a stale cached SDK, or standalone without the element
-> library, `js/sfx.js` silently falls back to the archived single-oscillator
-> chiptune profile (same cue names, no ambient bed) rather than going quiet.
-> And the bullets below remain the aesthetic *reference*, not a checklist: the
-> snap "tak", the ember fizz and the chain-10+ bell harmonic are still not
-> implemented as their own cues.
+> library, `js/sfx.js` registers nothing and the game plays silent — by design
+> (fleet decision 2026-07-28: chiptune is an aesthetic a game adopts, not a
+> degraded mode; the retired profile is preserved, inert, in
+> `audio/chiptune-archive.mjs`). And the bullets below remain the aesthetic
+> *reference*, not a checklist: the snap "tak", the ember fizz and the
+> chain-10+ bell harmonic are still not implemented as their own cues.
 
 - **Ambient bed:** a quiet pond at night — still water, rare brief insects, a
   rare ruffle in the reeds. No melody, no loop seam, and no mid-band noise
@@ -509,7 +510,7 @@ support for `data-theme="light"` and `data-theme="dark"`.
   as a pop, which is what this deliberately is not. One per lamp in the
   cluster, growing as the fire spreads. (Supersedes the chain-pitch ladder —
   3 = base note, 4 = +major third, 5 = +fifth, 6+ = +octave — which survives
-  only in the archived chiptune fallback.)
+  only in the inert archive, `audio/chiptune-archive.mjs`.)
 - **Moonburst:** a fireball, not a detonation — no snap at the front at all
   (`crack: 0`), so it arrives as a whump of low air with the ball of flame on
   top and a rumble rolling away across the pond. With a crack on it, it read as
