@@ -1,7 +1,11 @@
 {
-  "type": "module",
+  "name": "moon-lit",
+  "version": "0.1.0",
+  "private": true,
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "test": "node --test 'tests/*.test.js'"
-  },
-  "version": "0.1.0"
+  }
 }
