@@ -11,3 +11,6 @@ docs/archive/
 scratch/
 .arcade-stage/
 audio/out/
+
+# Deploy artifact — staged by CI, never committed.
+dist/
