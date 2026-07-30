@@ -22,92 +22,30 @@ const CACHE_NAME = `${CACHE_PREFIX}v${APP_VERSION}`;
 // (JS files, CSS files, images, sounds, etc.), update this list too or
 // offline mode will silently break for those assets.
 // tools/verify-artifact.mjs cross-checks every entry against the deploy.
+// Everything this game needs to boot offline — GENERATED, not maintained.
+// tools/stage.mjs rewrites the region below from the files the deploy actually
+// publishes (tools/inject-precache.mjs), so the list cannot drift from the
+// artifact and a content-hashed bundle name needs no hand edit. To leave a
+// file out, name it in PRECACHE_EXCLUDE in tools/stage.mjs — never here.
+//
+// What is checked in is a placeholder: service workers are off on loopback, so
+// a dev checkout never reads it.
+// arcade:precache-begin
 const ASSETS = [
   './',
   './index.html',
-  './manifest.json',
-  './css/style.css',
-  './icon.png',
-  './js/arcade-rng.js',
-  './js/admin-panel.js',
-  './js/assets.js',
-  './js/board.js',
-  './js/constants.js',
-  './js/difficulty.js',
-  './js/effects.js',
-  './js/game.js',
-  './js/geometry.js',
-  './js/input.js',
-  './js/lantern-svg.js',
-  './js/layout.js',
-  './js/main.js',
-  './js/match.js',
-  './js/physics.js',
-  './js/prng.js',
-  './js/projectile.js',
-  './js/puzzles.js',
-  './js/renderer.js',
-  './js/renderer/effects.js',
-  './js/renderer/hud.js',
-  './js/renderer/menu.js',
-  './js/renderer/style.js',
-  './js/renderer/world.js',
-  './js/scoring.js',
-  './js/seed-explore.js',
-  './js/seed-pattern.js',
-  './js/serialization.js',
-  './js/sfx.js',
-  './js/soundpack.js',
-  './js/stencil-packs.js',
-  './js/telemetry.js',
-  './img/bamboo-base-a.png',
-  './img/bamboo-base-b.png',
-  './img/bamboo-cane-short.png',
-  './img/bamboo-cane-tall.png',
-  './img/bamboo-cluster-dense.png',
-  './img/bamboo-cluster-fan.png',
-  './img/bamboo-cluster-multi.png',
-  './img/bamboo-cluster-wide.png',
-  './img/bamboo-leaf-single.png',
-  './img/bamboo-stalk-a.png',
-  './img/bamboo-stalk-b.png',
-  './img/bamboo-tall-a.png',
-  './img/bamboo-tall-b.png',
-  './img/bamboo-tall-c.png',
-  './img/bamboo-tip-a.png',
-  './img/bamboo-tip-b.png',
-  './img/bamboo-tip-c.png',
-  './img/cradle-wheel.png',
-  './img/favicon-32.png',
-  './img/flame-sprite.png',
-  './img/icon-192.png',
-  './img/icon-512.png',
-  './img/lantern-burst.png',
-  './img/logo.png',
-  './img/moon.png',
-  './img/stencils/bugs/ant.png',
-  './img/stencils/bugs/beetle.png',
-  './img/stencils/bugs/butterfly.png',
-  './img/stencils/bugs/dragonfly.png',
-  './img/stencils/bugs/mantis.png',
-  './img/stencils/bugs/moth.png',
-  './img/stencils/dragons/dragon_head.png',
-  './img/stencils/dragons/dragon_pearl.png',
-  './img/stencils/dragons/fire_dragon.png',
-  './img/stencils/dragons/flying_dragon.png',
-  './img/stencils/dragons/jade_dragon.png',
-  './img/stencils/dragons/water_dragon.png',
-  './img/stencils/flowers/bamboo.png',
-  './img/stencils/flowers/chrysanthemum.png',
-  './img/stencils/flowers/lotus.png',
-  './img/stencils/flowers/marigold.png',
-  './img/stencils/flowers/orchid.png',
-  './img/stencils/flowers/plum_blossom.png',
 ];
+// arcade:precache-end
 
 self.addEventListener('install', event => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then(cache => cache.addAll(ASSETS))
+    caches.open(CACHE_NAME).then(cache => Promise.all(
+      // Per-asset add(), not addAll(). addAll() rejects the WHOLE install on a
+      // single 404, so one missing file costs a returning player their entire
+      // offline shell — silently. A gap should cost one file and a log line.
+      ASSETS.map(asset => cache.add(asset).catch(err =>
+        console.warn('[sw] precache skipped', asset, err && err.message)))
+    ))
   );
   // Deliberately NOT skipWaiting(). The new worker installs and waits; the
   // launcher spots it and offers the player an explicit "update ready" reload,
@@ -165,7 +103,7 @@ self.addEventListener('fetch', event => {
   // Cache-first for static assets; cache successful fetches too, so assets
   // missing from ASSETS (or added later) still work offline next time.
   event.respondWith(
-    caches.match(event.request).then(cached => {
+    caches.match(event.request, { ignoreSearch: true }).then(cached => {
       if (cached) return cached;
       return fetch(event.request).then(response => {
         if (response.ok) {
