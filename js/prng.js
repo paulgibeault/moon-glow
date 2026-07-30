@@ -1,24 +1,23 @@
-// mulberry32 — tiny seeded PRNG, public domain. Identical streams across
-// devices for the same 32-bit seed. The single source of randomness for
-// gameplay; never use Math.random.
+// Thin adapter over the fleet's shared deterministic-rng companion — the
+// algorithm lives in ./arcade-rng.js (vendored byte-identical copy of the
+// launcher's /arcade-rng.js; see its header for the canonical-file rule).
+// Kept as an adapter so the game's call idiom (free-function pick(rng, list))
+// survives the migration. Streams are bit-identical to the old inline
+// mulberry32, so existing world seeds and saved rng states reproduce exactly
+// — tests/prng.test.js pins that with known-answer vectors.
+// The single source of randomness for gameplay; never use Math.random.
+import { makeRng } from './arcade-rng.js';
+
+// The `>>> 0` preserves this module's historical numeric-seed contract
+// (makeRng would hash a non-number seed via FNV-1a instead).
 export function mulberry32(seed) {
-  let s = seed >>> 0;
-  function next() {
-    s = (s + 0x6D2B79F5) >>> 0;
-    let t = s;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  }
-  next.getState = () => s;
-  next.setState = (val) => { s = val >>> 0; };
-  return next;
+  return makeRng(seed >>> 0);
 }
 
 // Resume a stream from a previously captured state (see rng.getState()).
 // Used by the save/restore path so the exact same lantern colors keep coming.
 export function mulberry32FromState(state) {
-  return mulberry32(state);
+  return makeRng(state >>> 0);
 }
 
 export function pickIndex(rng, n) {

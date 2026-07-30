@@ -2,6 +2,19 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mulberry32, pickIndex, pick } from '../js/prng.js';
 
+// Known-answer vectors pin the ALGORITHM, not just its shape: prng.js now
+// delegates to the vendored fleet companion (js/arcade-rng.js), and these
+// exact values are what the pre-migration inline mulberry32 produced. If
+// either file drifts — a local edit, a bad re-vendor — existing world seeds
+// and saved rng states silently stop reproducing; this fails instead.
+test('mulberry32 matches the pinned known-answer vectors', () => {
+  const rng = mulberry32(42);
+  assert.deepEqual(
+    [rng(), rng(), rng()],
+    [0.6011037519201636, 0.44829055899754167, 0.8524657934904099]);
+  assert.equal(rng.getState(), 1199730185);
+});
+
 test('mulberry32 produces values in [0, 1)', () => {
   const rng = mulberry32(0xDEADBEEF);
   for (let i = 0; i < 1000; i++) {
