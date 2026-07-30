@@ -218,7 +218,13 @@ let game = null;
 let launcherSuspended = false;
 let docHidden = document.visibilityState === 'hidden';
 let lastTime = 0;
-let rafId = 0;
+// The SDK owns the frame loop. Every canvas game hand-wired "cancel on
+// suspend, re-request on resume" and the fleet got a different leg of it wrong
+// in each repo; Arcade.loop owns that, and suspended time never appears in a
+// delta. Created here rather than further down so no init path can reach
+// requestFrame() before it exists. This game's own launcherSuspended/docHidden
+// flags are kept — they gate more than scheduling.
+const frameLoop = Arcade.loop(frame);
 let bestScore = loadBest();
 let playerName = Arcade.player.name() || '';
 let lastPhase = null;
@@ -787,14 +793,15 @@ function emitGameSfx(g) {
   sfxPrevShotsUntil = shotsUntil;
 }
 
-function frame(now) {
+// Arcade.loop passes (deltaMs, timestamp); this game derives its own dt in
+// seconds and caps its own frame rate, so only the timestamp is used.
+function frame(_deltaMs, now) {
   lastFrameTimeMs = performance.now();
-  if (launcherSuspended || docHidden || !layout) { rafId = 0; return; }
+  if (launcherSuspended || docHidden || !layout) { frameLoop.stop(); return; }
   const limitMs = targetFrameMs();
-  if (limitMs && (now - lastFrameMs) < limitMs - 1) {
-    rafId = requestAnimationFrame(frame);
-    return;
-  }
+  // Under the FPS cap, consume the frame without doing work — the loop stays
+  // started, so the next frame arrives on its own.
+  if (limitMs && (now - lastFrameMs) < limitMs - 1) return;
   lastFrameMs = now;
   const dt = lastTime === 0 ? 0 : Math.min(0.05, (now - lastTime) / 1000);
   lastTime = now;
@@ -818,11 +825,11 @@ function frame(now) {
   // off the scheduler entirely until requestFrame() wakes it up.
   render(ctx, layout, game, settings, cachedStats, cachedScores);
 
+  // Nothing moving and no recent input: drop off the scheduler entirely until
+  // requestFrame() wakes it. stop() is this game's quiescence.
   if (isQuiescent()) {
-    rafId = 0;
+    frameLoop.stop();
     lastTime = 0;
-  } else {
-    rafId = requestAnimationFrame(frame);
   }
 }
 
@@ -831,15 +838,15 @@ function frame(now) {
 // asleep MUST call this so the change is actually drawn.
 function requestFrame() {
   if (launcherSuspended || docHidden) return;
-  if (rafId) {
+  if (frameLoop.running()) {
     if (performance.now() - lastFrameTimeMs > 500) {
-      console.warn(`[${GAME_ID}] rAF loop appears stuck (rafId=${rafId}, last frame ${Math.round(performance.now() - lastFrameTimeMs)}ms ago). Forcing wake-up.`);
+      console.warn(`[${GAME_ID}] rAF loop appears stuck (last frame ${Math.round(performance.now() - lastFrameTimeMs)}ms ago). Forcing wake-up.`);
       forceRequestFrame();
     }
     return;
   }
   lastTime = 0;
-  rafId = requestAnimationFrame(frame);
+  frameLoop.start();
 }
 
 // Force-wake the rAF loop, cancelling any potentially stale or discarded
@@ -847,12 +854,12 @@ function requestFrame() {
 // Essential for resuming reliably after device locks / tab suspensions.
 function forceRequestFrame() {
   if (launcherSuspended || docHidden) return;
-  if (rafId) {
-    cancelAnimationFrame(rafId);
-    rafId = 0;
-  }
+  // stop() cancels any outstanding frame request; start() then schedules a
+  // fresh one. Essential after device locks / tab suspensions, where the
+  // browser can hand back an id that never fires.
+  frameLoop.stop();
   lastTime = 0;
-  rafId = requestAnimationFrame(frame);
+  frameLoop.start();
 }
 
 function bumpInteraction() {
@@ -874,7 +881,7 @@ function flushPersist() {
 // browser's animation budget. Flush progress to localStorage at the same
 // moment so an LRU eviction can't lose state set in the last few frames.
 function stopLoop() {
-  if (rafId) { cancelAnimationFrame(rafId); rafId = 0; }
+  frameLoop.stop();
   lastTime = 0;
 }
 
