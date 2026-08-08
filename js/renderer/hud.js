@@ -5,6 +5,7 @@ import { puzzleConfig } from '../puzzles.js';
 import {
   SERIF, SANS, HUD_OPACITY,
   formatScore, hudPx, fontScaleOf, hexToRgba, PERF_MODE,
+  ambientStill, ambientClock,
 } from './style.js';
 import { getMoonState, drawPhaseShadow, drawLantern } from './world.js';
 import { MENU_RESERVE_PX } from './menu.js';
@@ -114,8 +115,13 @@ export function drawDescentMeter(ctx, layout, game, settings) {
   // a frantic end game. Timed (≤2s) and shot-based (last shot) each trigger it.
   const reduced = !!(settings && settings.reducedMotion);
   const imminent = isSpeed ? (game.timeUntilDescent <= 2.0) : (n <= 1);
-  const pulse = (imminent && !reduced)
-    ? 0.5 + 0.5 * Math.sin(performance.now() / 1000 * (isSpeed ? 7 : 5))
+  // The throb settles to its ember END STATE, not to no-warning: a frozen
+  // pulse of 0 would paint the meter the same colour as a calm one and the
+  // player would lose the threat entirely. Full ember is the static resting
+  // treatment that still says "the trellis is about to come down"
+  // (GAME_INTEGRATION §6d).
+  const pulse = imminent
+    ? (ambientStill(settings) ? 1 : 0.5 + 0.5 * Math.sin(ambientClock() * (isSpeed ? 7 : 5)))
     : 0;
   const canGlow = !reduced && !(PERF_CONFIG.disableMobileShadows && PERF_MODE);
 
@@ -496,7 +502,7 @@ function drawComboPowers(ctx, layout, game, settings, x, y, align) {
 
   // Moonburst-ready sparkle — a soft pulse so it reads as "armed, fire when ready".
   if (ready) {
-    const tt = settings.reducedMotion ? 1 : 0.65 + 0.35 * Math.sin(performance.now() / 1000 * 4);
+    const tt = ambientStill(settings) ? 1 : 0.65 + 0.35 * Math.sin(ambientClock() * 4);
     ctx.font = `italic 600 ${px}px ${SERIF}`;
     ctx.fillStyle = hexToRgba(PALETTE.moonHalo, HUD_OPACITY.strong * tt);
     if (align === 'right') {
@@ -1541,8 +1547,9 @@ export function drawLoadingOverlay(ctx, layout, game, settings) {
   const cx = viewW / 2;
   const cy = viewH / 2;
 
-  // Pulse effect based on wall time
-  const time = performance.now() / 1000;
+  // Pulse effect on the ambient clock — the overlay still reads as "working
+  // on it" when that clock is frozen, it just stops breathing.
+  const time = ambientClock();
   const pulse = Math.sin(time * 3) * 0.1 + 0.9; // 0.8 to 1.0 pulse
 
   // Soft glowing core

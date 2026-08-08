@@ -4,7 +4,7 @@ import { puzzleConfig, PUZZLE_COUNT } from './puzzles.js';
 import { serializeGame, restoreGame } from './serialization.js';
 import { computeLayout } from './layout.js';
 import { render, resetHudState, isHudSettled } from './renderer.js';
-import { getEffectiveDpr, PERF_MODE, setPerfModeOverride } from './renderer/style.js';
+import { getEffectiveDpr, PERF_MODE, setPerfModeOverride, ambientStill } from './renderer/style.js';
 import { attachInput } from './input.js';
 import { loadLanterns, loadBambooSprites, loadMoonTexture, loadHarnessSprite, triggerNewRandomMapping, changeStencilPack } from './assets.js';
 import { syncLanternPixels } from './board.js';
@@ -229,13 +229,31 @@ let bestScore = loadBest();
 let playerName = Arcade.player.name() || '';
 let lastPhase = null;
 let wasMenuOpen = false;
+// Power saver (SDK 3.13.0+) — the player's explicit battery lever, read
+// defensively because the launcher may still be serving an older SDK where
+// `powerSaver` doesn't exist and calling it throws a TypeError; inside an
+// onSettingsChange handler that would be a throw on every settings write, not
+// just at boot. An older SDK degrades to "not saving".
+// GAME_INTEGRATION §5 "Canvas-rendered games" / §6d.
+function readPowerSaver() {
+  return !!(Arcade.settings
+    && typeof Arcade.settings.powerSaver === 'function'
+    && Arcade.settings.powerSaver());
+}
+let powerSaving = readPowerSaver();
+
 // Last pointer activity timestamp. While this is recent, the rAF loop keeps
-// running so ambient animations (star twinkle, moon halo breath, slow moon
-// traverse) play under the player's fingers. After INTERACTION_TAIL_MS of
-// quiet — and only if gameplay/effects/HUD tweens are all settled — the loop
-// stops scheduling frames at all, dropping the canvas's CPU/GPU load to zero
-// until something happens.
+// running so ambient animations (star twinkle, moon halo breath, lantern
+// flames) play under the player's fingers. After the tail elapses — and only
+// if gameplay/effects/HUD tweens are all settled — the loop stops scheduling
+// frames at all, dropping the canvas's CPU/GPU load to zero until something
+// happens. The tail exists ONLY to keep that ambience alive, so when the
+// ambient clock is frozen (reduced motion or power saver) it has nothing left
+// to keep: it shrinks to just enough to ride out a burst of pointer events
+// without starting and stopping the loop on every one.
 const INTERACTION_TAIL_MS = 1200;
+const INTERACTION_TAIL_STILL_MS = 200;
+const interactionTailMs = () => (ambientStill(settings) ? INTERACTION_TAIL_STILL_MS : INTERACTION_TAIL_MS);
 let lastInteractionMs = 0;
 let lastFrameTimeMs = performance.now();
 
@@ -244,8 +262,10 @@ let lastFrameTimeMs = performance.now();
 // ticks return early without stepping or drawing — halving GPU/CPU work on
 // phones for an animation-quality tradeoff that's near-invisible at arm's
 // length. The -1ms slack ensures refreshes that land just under the boundary
-// still count toward the next render.
-const targetFrameMs = () => (PERF_MODE ? 33 : 0);
+// still count toward the next render. Power saver opts into the same cadence
+// on any device: 60fps is the frame-rate luxury the setting is asking us to
+// give up, and gameplay motion still runs — just at the phone's cadence.
+const targetFrameMs = () => ((PERF_MODE || powerSaving) ? 33 : 0);
 let lastFrameMs = 0;
 
 // Any phase except FLYING carries a fully resolved game state we can resume
@@ -320,10 +340,12 @@ function startGame(g) {
 }
 
 function readSettings() {
+  powerSaving = readPowerSaver();
   return {
     fontScale:     Arcade.settings.fontScale(),
     reducedMotion: Arcade.settings.reducedMotion(),
     handedness:    (Arcade.settings && typeof Arcade.settings.handedness === 'function') ? Arcade.settings.handedness() : 'right',
+    powerSaver:    powerSaving,
     bestScore,
     playerName,
   };
@@ -674,7 +696,7 @@ function isQuiescent() {
   }
   if (game.isSpeedMode && game.phase === PHASE.AIMING) return false;
   if (game.shots && game.shots.length > 0) return false;
-  if (performance.now() - lastInteractionMs < INTERACTION_TAIL_MS) return false;
+  if (performance.now() - lastInteractionMs < interactionTailMs()) return false;
   if (game.phase !== PHASE.AIMING) return false;
   if (hasActiveEffects(game)) return false;
   if (!isHudSettled(game)) return false;
