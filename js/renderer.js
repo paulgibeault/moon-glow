@@ -16,11 +16,16 @@ import {
   drawLoadingOverlay, drawRightNotices,
 } from './renderer/hud.js';
 import { drawMenu } from './renderer/menu.js';
+import { setAmbientClock } from './renderer/style.js';
 
 export { computeLayout } from './layout.js';
 export { resetHudState, isHudSettled };
 
 export function render(ctx, layout, game, settings, stats, scores) {
+  // Wind the ambient clock for this frame. Every decorative effect below reads
+  // it instead of the wall clock, so reduced motion and power saver settle all
+  // of them together (renderer/style.js, GAME_INTEGRATION §5/§6d).
+  setAmbientClock(settings);
   tweenHud(game, settings);
 
   const { viewW, viewH } = layout;

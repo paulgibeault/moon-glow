@@ -51,6 +51,35 @@ export function fontScaleOf(settings) {
   return Math.max(0.5, settings && settings.fontScale ? settings.fontScale : 1);
 }
 
+// Ambience — star twinkle, the moon's halo breath, the water shimmer, the
+// launcher's idle flame and sparks, wind sway over a settled field — is
+// decoration. It is the motion that keeps running when nothing is happening,
+// which is exactly the motion GAME_INTEGRATION §6d says a visible-but-idle
+// game should give up. Reduced motion has always frozen it; power saver
+// (SDK 3.13.0+, §5 "Canvas-rendered games") is the player's own battery lever
+// and freezes the same set. Everything the player needs to READ the game —
+// the shot in flight, the descent, pops, the recoil that answers their own
+// tap, HUD tweens — is gameplay-essential and keeps moving under power saver.
+export function ambientStill(settings) {
+  return !!(settings && (settings.reducedMotion || settings.powerSaver));
+}
+
+// The ambient clock — the single time source every decorative effect reads
+// instead of calling performance.now() for itself. render() winds it once per
+// frame; when the player has asked for stillness it holds at zero, which
+// settles the lantern flames, the burner flicker and its sparks, the star
+// twinkle, the halo breath and the water shimmer onto one resting frame at a
+// stroke. Gameplay motion keeps its own physical clock, so shots, descent and
+// the launcher's recoil are untouched. One clock also means every effect in a
+// frame agrees on what time it is.
+let ambientTSec = 0;
+export function setAmbientClock(settings) {
+  ambientTSec = ambientStill(settings) ? 0 : performance.now() / 1000;
+}
+export function ambientClock() {
+  return ambientTSec;
+}
+
 // Touch-primary devices (phones, tablets) get a softer DPR cap and a halved
 // frame rate. The visual cost is small — at arm's length a 1.5× backbuffer is
 // indistinguishable from native 2-3× on a modern OLED panel — and the GPU/CPU

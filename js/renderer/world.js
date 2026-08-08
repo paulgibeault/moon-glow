@@ -13,7 +13,7 @@ import { mulberry32 } from '../prng.js';
 import {
   SERIF, SANS, HUD_OPACITY,
   easeOut, mixWithWhite, mixWithBlack, hexToRgba,
-  getEffectiveDpr, PERF_MODE,
+  getEffectiveDpr, PERF_MODE, ambientStill, ambientClock,
 } from './style.js';
 
 // ─── Sky, moon, bamboo ──────────────────────────────────────────────────────
@@ -265,14 +265,16 @@ function ensureStarfieldCanvas(w, h, dpr, allStatic) {
 export function drawStars(ctx, layout, settings) {
   const { viewW: w, viewH: h } = layout;
   const dpr = getEffectiveDpr();
-  const reducedMotion = !!(settings && settings.reducedMotion);
-  const useAllStatic = PERF_MODE || reducedMotion;
+  // Twinkle is pure ambience: it costs a per-frame pass over the whole star
+  // list and says nothing about the game. Reduced motion, power saver and the
+  // phone perf tier all bake the field into one static bitmap instead.
+  const useAllStatic = PERF_MODE || ambientStill(settings);
 
   const starfieldCanvas = ensureStarfieldCanvas(w, h, dpr, useAllStatic);
   ctx.drawImage(starfieldCanvas, 0, 0, w, h);
 
   if (!useAllStatic) {
-    const t = performance.now() / 1000;
+    const t = ambientClock();
     const stars = getStars(w, h);
     ctx.fillStyle = PALETTE.moon;
     for (let i = 0; i < stars.length; i++) {
@@ -518,11 +520,15 @@ export function drawMoon(ctx, layout, game, settings) {
   if (mrWash > 0) glow = Math.min(1, glow + 0.85 * mrWash);
   // Quantized for the offscreen-glow cache key in the non-PERF path below.
   const glowBucket = Math.round(glow * 20);
-  const t = reducedMotion ? 0 : performance.now() / 1000;
+  // The halo breath and the slow texture rotation are the moon "being alive"
+  // — ambience, so they run off the ambient clock and stop dead when it does.
+  // The halo itself always paints, so the moon still reads as vivid and warm;
+  // it just holds still.
+  const t = ambientClock();
 
   // Slow breath: ±6% radius, ±15% alpha, ~12s period. Even without combo
   // the halo never sits perfectly still — keeps the moon "alive."
-  const breath = reducedMotion ? 0 : Math.sin(2 * Math.PI * t / 12);
+  const breath = Math.sin(2 * Math.PI * t / 12);
   const breathR = 1 + 0.06 * breath;
   const breathA = 1 + 0.15 * breath;
 
@@ -717,9 +723,9 @@ export function drawMoon(ctx, layout, game, settings) {
   }
 
   if (tex && tex.width > 0) {
-    // Slow rotation (~8 min/turn) keeps surface detail drifting subtly. Skip
-    // when reduced motion is on so the disc reads as completely still.
-    const rot = reducedMotion ? 0 : (2 * Math.PI * t / 480);
+    // Slow rotation (~8 min/turn) keeps surface detail drifting subtly, and
+    // stops with the ambient clock so the disc reads as completely still.
+    const rot = 2 * Math.PI * t / 480;
     ctx.translate(cx, cy);
     ctx.rotate(rot);
     // Slight oversample so rotation can't reveal an unpainted corner of the
@@ -1793,6 +1799,9 @@ export function drawReflections(ctx, layout, game, settings) {
   const board = game.board;
   const animY = board.descentAnimY || 0;
   const reducedMotion = !!(settings && settings.reducedMotion);
+  // The moon column's rippling is ambience; the lantern reflections' descent
+  // jitter mirrors gameplay motion and stays on the reduced-motion rule.
+  const still = ambientStill(settings);
   const fadeDepth = viewH * 0.5;
 
   ctx.save();
@@ -1812,7 +1821,7 @@ export function drawReflections(ctx, layout, game, settings) {
     const intensity = m.altitude * (0.35 + 0.65 * k);
     const length = Math.min(viewH - deadLineY, m.r * 3 + m.r * 9 * m.altitude);
     const reflectionTop = deadLineY + 1;
-    const tNow = reducedMotion ? 0 : performance.now() / 1000;
+    const tNow = ambientClock();
     const SLICES = PERF_MODE ? 12 : 24;
     const sliceH = length / SLICES;
     for (let i = 0; i < SLICES; i++) {
@@ -1822,7 +1831,7 @@ export function drawReflections(ctx, layout, game, settings) {
       const sliceY = reflectionTop + i * sliceH;
       // Per-slice horizontal jitter sells "water rippling" without needing a
       // real shader. Amplitude grows downstream; phase advances with time.
-      const shimmer = reducedMotion ? 0 : Math.sin(f * 6.0 + tNow * 1.2) * m.r * 0.18 * f;
+      const shimmer = still ? 0 : Math.sin(f * 6.0 + tNow * 1.2) * m.r * 0.18 * f;
       const cxJ = m.cx + shimmer;
       // Widen toward the base — the reflection spreads as it crosses the
       // moon's distance over the water surface.
@@ -1978,6 +1987,9 @@ export function drawBoard(ctx, layout, game, settings) {
   const { size, viewH } = layout;
   const animY = board.descentAnimY || 0;
   const reducedMotion = settings && settings.reducedMotion;
+  // Wind sway is the field breathing while the player thinks — the one branch
+  // here that isn't answering a game event, so it's the one power saver drops.
+  const still = ambientStill(settings);
   const tSec = reducedMotion ? 0 : performance.now() / 1000;
   for (const l of board.lanterns) {
     let dx = l.x, dy = l.y;
@@ -2002,7 +2014,7 @@ export function drawBoard(ctx, layout, game, settings) {
     } else if (animY !== 0 && !reducedMotion && !l.drown) {
       const j = descentJitter(l, layout, board, tSec);
       if (j) { dx += j.dx; dy += j.dy; }
-    } else if (!reducedMotion && !l.drown && ENV_PARAMS.windSpeed > 0) {
+    } else if (!still && !l.drown && ENV_PARAMS.windSpeed > 0) {
       const wSway = ambientWindSway(l, layout, tSec);
       if (wSway) { dx += wSway.dx; dy += wSway.dy; }
     }
@@ -2044,7 +2056,12 @@ function phaseOf(l) {
 // `boost` is an additive flare-up from external events (ripples) and is
 // applied after intensity so it stays visible even on a half-lit shot.
 function emberLevel(phase, intensity, boost) {
-  const t = performance.now() / 1000;
+  // Every lit lantern on the board breathes on this clock, which makes it the
+  // single largest piece of idle animation in the game — and the first thing
+  // power saver should stop. Frozen, each lamp settles on its own phase, so
+  // the field still reads as a scatter of warm and dim lights rather than a
+  // uniform row.
+  const t = ambientClock();
   const slow = 0.20 * Math.sin(t * 1.5 + phase);
   const fast = 0.12 * Math.sin(t * 4.7 + phase * 1.7);
   const flareSin = Math.sin(t * 0.55 + phase * 3.7 + 1.3);
@@ -2480,7 +2497,13 @@ function drawBambooFork(ctx, r) {
   ctx.restore();
 }
 
+// Two clocks. `tSec` is the physical one — recoil and the wheel's quarter turn
+// answer the player's own shot, so they run whatever the settings say. `ambT`
+// is the ambient one, off the shared clock: the burner flame, its halo
+// flicker and the heat sparks idle forever, so they settle onto a single
+// resting frame under reduced motion / power saver (GAME_INTEGRATION §6d).
 function drawLauncherAssembly(ctx, layout, game, tSec, isReflection) {
+  const ambT = ambientClock();
   const wheelSprite = getLauncherWheelSprite();
 
   const r = layout.size;
@@ -2551,7 +2574,7 @@ function drawLauncherAssembly(ctx, layout, game, tSec, isReflection) {
   //   visually; the halo bleeds warmth onto the spokes and the next-fork
   //   lantern as it rotates into view.
   if (!isReflection) {
-    const flickerPulse = 1.0 + 0.06 * Math.sin(tSec * 5.0) + 0.04 * Math.cos(tSec * 8.0);
+    const flickerPulse = 1.0 + 0.06 * Math.sin(ambT * 5.0) + 0.04 * Math.cos(ambT * 8.0);
     const haloR = r * 1.8 * flickerPulse;
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
@@ -2565,7 +2588,7 @@ function drawLauncherAssembly(ctx, layout, game, tSec, isReflection) {
     ctx.fill();
     ctx.restore();
 
-    drawHubFlame(ctx, x_wheel, y_wheel, r, tSec);
+    drawHubFlame(ctx, x_wheel, y_wheel, r, ambT);
   }
 
   // C. Draw 4 bamboo forks at 90-degree offsets on the Wheel
@@ -2634,11 +2657,11 @@ function drawLauncherAssembly(ctx, layout, game, tSec, isReflection) {
         // player sees their next shot is the special before they fire it.
         const litVal = !isReflection;
         if (game.moonburstReady && !isReflection) {
-          drawFireballAura(ctx, 0, 0, r, tSec);
+          drawFireballAura(ctx, 0, 0, r, ambT);
         }
         drawLantern(ctx, 0, 0, r, game.queue.current, {
           lit: litVal,
-          intensity: 0.40 + 0.12 * Math.sin(tSec * 4.0),
+          intensity: 0.40 + 0.12 * Math.sin(ambT * 4.0),
           phase: 0,
           designId: game.queue.currentDesign
         });
@@ -2646,7 +2669,7 @@ function drawLauncherAssembly(ctx, layout, game, tSec, isReflection) {
 
         // Rising heat sparks from the ignited fuel pellet
         if (!isReflection) {
-          drawSparks(ctx, -d_hinge_lantern, r, tSec);
+          drawSparks(ctx, -d_hinge_lantern, r, ambT);
         }
       }
     } else if (isNextFork) {
@@ -2665,7 +2688,7 @@ function drawLauncherAssembly(ctx, layout, game, tSec, isReflection) {
         : 0;
       const igniteRaw = Math.min(1, t_at_top / IGNITE_AT_TOP_SEC);
       const igniteEase = igniteRaw * igniteRaw * (3 - 2 * igniteRaw);
-      const seatedIntensity = 0.40 + 0.12 * Math.sin(tSec * 4.0);
+      const seatedIntensity = 0.40 + 0.12 * Math.sin(ambT * 4.0);
       // Catch-light: peaks just before ignition completes, then decays. Width
       // is narrow enough that it's faded to near-zero by the wheel snap-back,
       // preserving the existing no-pop transition into the active fork.
@@ -2724,7 +2747,7 @@ export function drawLauncher(ctx, layout, game) {
   ctx.translate(-tip.x, -yLocal);
 
   // Apply a gentle sinusoidal water ripple drift
-  const rippleSway = Math.sin(tSec * 2.4) * r * 0.04;
+  const rippleSway = Math.sin(ambientClock() * 2.4) * r * 0.04;
   ctx.translate(tip.x + rippleSway, tip.y);
   ctx.globalAlpha = 0.26; // Soft water reflection alpha
 
@@ -2968,7 +2991,7 @@ export function drawProjectile(ctx, shot, layout) {
   const drawY = shot.y + ( shot.vx) * wobble;
   const ignite = Math.min(1, t / IGNITE_SEC);
   if (shot.moonburst) {
-    drawFireballAura(ctx, drawX, drawY, layout.size, performance.now() / 1000);
+    drawFireballAura(ctx, drawX, drawY, layout.size, ambientClock());
   }
   drawLantern(ctx, drawX, drawY, layout.size, shot.color,
     { lit: true, intensity: ignite, phase, designId: shot.designId });
