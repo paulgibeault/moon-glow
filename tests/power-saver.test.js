@@ -15,11 +15,16 @@ import assert from "node:assert";
 import { execSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { ROOT } from "../tools/stage.mjs";
 import { ambientStill } from "../js/renderer/style.js";
 
+// This file quotes the very patterns it forbids, so it has to exclude itself
+// from its own source scan.
+const SELF = path.relative(ROOT, fileURLToPath(import.meta.url));
+
 const tracked = execSync("git ls-files -z", { cwd: ROOT, encoding: "utf8" })
-  .split("\0").filter(Boolean);
+  .split("\0").filter(Boolean).filter((f) => f !== SELF);
 
 const read = (f) => fs.readFileSync(path.join(ROOT, f), "utf8");
 
