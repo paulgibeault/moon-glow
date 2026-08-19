@@ -7,12 +7,12 @@ import { render, resetHudState, isHudSettled, quickRestartWakeMs } from './rende
 import { invalidateSceneCache } from './renderer/world.js';
 import { getEffectiveDpr, PERF_MODE, setPerfModeOverride, ambientStill } from './renderer/style.js';
 import { attachInput } from './input.js';
-import { loadLanterns, loadBambooSprites, loadMoonTexture, loadHarnessSprite, triggerNewRandomMapping, changeStencilPack } from './assets.js';
+import { loadLanterns, loadBambooSprites, loadMoonTexture, loadHarnessSprite, changeStencilPack } from './assets.js';
 import { syncLanternPixels } from './board.js';
 import { initAdminPanel } from './admin-panel.js';
 import { designForCell } from './stencil-packs.js';
 import {
-  isMenuOpen, isMenuPanelOpen, isMenuSettled, tickMenu, closeMenu, openMenuToLevelSelector,
+  isMenuPanelOpen, isMenuSettled, tickMenu, closeMenu, openMenuToLevelSelector,
   openMenuToExplore, openMenuToSeeds,
 } from './renderer/menu.js';
 import {
@@ -1149,7 +1149,7 @@ attachInput(canvas, () => game, () => layout, {
     requestFrame();
   },
 });
-window.triggerAdminUpdate = () => {
+function onAdminUpdate() {
   settings = readSettings();
   setPerfModeOverride(SYSTEM_OVERRIDES.perfMode);
   // The admin panel's sliders move the tuning objects the scene draws read
@@ -1163,9 +1163,9 @@ window.triggerAdminUpdate = () => {
   }
   resize();
   forceRequestFrame();
-};
+}
 
-initAdminPanel();
+initAdminPanel(onAdminUpdate);
 resize();
 requestFrame();
 

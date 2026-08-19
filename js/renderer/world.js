@@ -1,4 +1,4 @@
-import { COLORS, PALETTE, PERF_CONFIG, MOON_OVERRIDE, ENV_PARAMS, SYSTEM_OVERRIDES } from '../constants.js';
+import { COLORS, PALETTE, MOON_OVERRIDE, ENV_PARAMS, SYSTEM_OVERRIDES } from '../constants.js';
 import { launcherTip, traceAimLine, PHASE } from '../game.js';
 import { rippleBoost } from '../effects.js';
 import {
@@ -12,7 +12,7 @@ import {
 } from '../assets.js';
 import { mulberry32 } from '../prng.js';
 import {
-  SERIF, SANS, HUD_OPACITY,
+  HUD_OPACITY,
   easeOut, mixWithWhite, mixWithBlack, hexToRgba,
   getEffectiveDpr, PERF_MODE, ambientStill, ambientClock,
 } from './style.js';
@@ -194,7 +194,7 @@ function getStars(w, h) {
 let skyBaseGrad = { ctx: null, h: 0, grad: null };
 let skyBandGrad = { ctx: null, key: '', grad: null };
 
-export function drawBackgroundSky(ctx, layout, settings) {
+function drawBackgroundSky(ctx, layout, settings) {
   const { viewW: w, viewH: h } = layout;
   // Base indigo gradient — unchanged look, now reused across frames.
   if (skyBaseGrad.ctx !== ctx || skyBaseGrad.h !== h) {
@@ -265,7 +265,7 @@ function ensureStarfieldCanvas(w, h, dpr, allStatic) {
   return canvas;
 }
 
-export function drawStars(ctx, layout, settings) {
+function drawStars(ctx, layout, settings) {
   const { viewW: w, viewH: h } = layout;
   const dpr = getEffectiveDpr();
   // Twinkle is pure ambience: it costs a per-frame pass over the whole star
@@ -346,7 +346,7 @@ function ensureGlowCanvas(w, h, dpr) {
 // which is ten times a second at most and not at all while the board is
 // settled under stillness. The extra blit is affordable at that rate, and both
 // device classes draw the same picture.
-export function drawCelestialLayer(ctx, layout, game, settings) {
+function drawCelestialLayer(ctx, layout, game, settings) {
   const { viewW, viewH } = layout;
   const dpr = getEffectiveDpr();
 
@@ -507,7 +507,7 @@ export function drawPhaseShadow(ctx, cx, cy, r, phase01, layout, customColor) {
 // dips into the water with its halo and rim still attached; the disc is
 // clipped at the horizon so the lower limb appears to slip below the surface
 // rather than sit on it.
-export function drawMoon(ctx, layout, game, settings) {
+function drawMoon(ctx, layout, game, settings) {
   const reducedMotion = !!settings.reducedMotion;
   const m = moonState(layout, settings, Date.now());
   const { cx, cy, r, altitude, horizonY, phase01 } = m;
@@ -904,7 +904,7 @@ function paintBleed(canvas, m, viewW, viewH, deadLineY, handedness) {
   }
 }
 
-export function drawMoonBleed(ctx, layout, settings) {
+function drawMoonBleed(ctx, layout, settings) {
   const m = moonState(layout, settings, Date.now());
   if (m.altitude <= 0.02) return;
   const { viewW, viewH } = layout;
@@ -985,7 +985,7 @@ const BAMBOO_LEVEL_MULT = 0x9E3779B9;
 // copied here from its "Copy JSON" button after playtesting.
 // The non-profile keys (caneTopperScale, tipTrunkFrac) are appended via
 // COMMON_DEFAULTS so both profiles share them.
-export const BAMBOO_PROFILE_SMALL = Object.freeze({
+const BAMBOO_PROFILE_SMALL = Object.freeze({
   edgeBand:           0.26,
   towersPerSide:      1,
   trunksPerSide:      4,
@@ -1000,7 +1000,7 @@ export const BAMBOO_PROFILE_SMALL = Object.freeze({
   baseGrassFrac:      0.47,
   bankYFrac:          0.995,
 });
-export const BAMBOO_PROFILE_WIDE = Object.freeze({
+const BAMBOO_PROFILE_WIDE = Object.freeze({
   edgeBand:           0.26,
   towersPerSide:      2,
   trunksPerSide:      3,
@@ -1082,12 +1082,12 @@ function ensureBambooCache(w, h, dpr, level) {
   return bambooCache;
 }
 
-export function getBambooMaskCanvas(w, h, dpr, level) {
+function getBambooMaskCanvas(w, h, dpr, level) {
   const cache = ensureBambooCache(w, h, dpr, level);
   return cache.maskCanvas;
 }
 
-export function drawBamboo(ctx, w, h, game, settings) {
+function drawBamboo(ctx, w, h, game, settings) {
   const dpr = getEffectiveDpr();
   const gameLevel = ((game && game.level) | 0) || 1;
   const level = (BAMBOO_PARAMS.levelOverride | 0) || gameLevel;
@@ -1775,7 +1775,7 @@ function drawHangingSprite(ctx, sprite, cx, yAnchor, drawW, drawH, rotation, hFl
 // main canvas (PERF) are distinct; only one is used per session.
 let waterlineGrad = { ctx: null, w: 0, grad: null };
 
-export function drawWaterline(ctx, layout) {
+function drawWaterline(ctx, layout) {
   const { viewW, deadLineY } = layout;
   ctx.save();
   if (waterlineGrad.ctx !== ctx || waterlineGrad.w !== viewW) {
@@ -1830,7 +1830,7 @@ function reflectionGrads(ctx, r, intensity, slices) {
   return grads;
 }
 
-export function drawReflections(ctx, layout, game, settings) {
+function drawReflections(ctx, layout, game, settings) {
   const { viewW, viewH, deadLineY } = layout;
   if (deadLineY >= viewH) return;
   const board = game.board;

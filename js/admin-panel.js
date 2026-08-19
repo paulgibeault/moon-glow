@@ -379,9 +379,7 @@ function setValOf(spec, group, value) {
   if (spec.onChange) spec.onChange();
   if (group.onChange) group.onChange();
   
-  if (window.triggerAdminUpdate) {
-    window.triggerAdminUpdate();
-  }
+  onUpdate();
 }
 
 // Walks every slider in the panel and snaps both the input value and the
@@ -451,7 +449,7 @@ function buildPanel() {
     btn.addEventListener('click', () => {
       applyBambooProfile(btn.dataset.profile);
       syncSliders(r);
-      if (window.triggerAdminUpdate) window.triggerAdminUpdate();
+      onUpdate();
     });
   });
 
@@ -543,7 +541,7 @@ function buildPanel() {
     btn.addEventListener('click', () => {
       SYSTEM_OVERRIDES.handedness = btn.dataset.val;
       syncButtons(r);
-      if (window.triggerAdminUpdate) window.triggerAdminUpdate();
+      onUpdate();
     });
   });
 
@@ -552,7 +550,7 @@ function buildPanel() {
     btn.addEventListener('click', () => {
       SYSTEM_OVERRIDES.perfMode = btn.dataset.val;
       syncButtons(r);
-      if (window.triggerAdminUpdate) window.triggerAdminUpdate();
+      onUpdate();
     });
   });
 
@@ -614,7 +612,7 @@ function buildPanel() {
     invalidateBambooCache();
     syncSliders(r);
     syncButtons(r);
-    if (window.triggerAdminUpdate) window.triggerAdminUpdate();
+    onUpdate();
   });
 
   r.querySelector('[data-action="hide"]').addEventListener('click', () => {
@@ -663,7 +661,15 @@ function migrateLegacyCollapsedKeys() {
   });
 }
 
-export function initAdminPanel() {
+// The panel's one dependency on the game: "I changed a tuning value, re-read
+// the settings and repaint". It reached for window.triggerAdminUpdate, which
+// meant main.js had to publish a function on the global object for a module it
+// already imports. Injected now, so the seam is an argument and the global is
+// gone.
+let onUpdate = () => {};
+
+export function initAdminPanel(onUpdateCallback) {
+  if (typeof onUpdateCallback === 'function') onUpdate = onUpdateCallback;
   migrateLegacyCollapsedKeys();
   const params = new URLSearchParams(window.location.search);
   if (params.get('admin') === '1') {

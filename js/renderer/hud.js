@@ -1,5 +1,4 @@
 import { PALETTE, PERF_CONFIG, levelConfig, COLOR_KEYS, COLORS, COMBO_POWERS } from '../constants.js';
-import { STENCIL_PACKS } from '../stencil-packs.js';
 import { PHASE, comboPowersActive, QUICK_RESTART_ARM_SEC } from '../game.js';
 import { puzzleConfig } from '../puzzles.js';
 import {
