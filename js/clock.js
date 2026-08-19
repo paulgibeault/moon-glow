@@ -16,17 +16,24 @@
  *   renderClock()  seconds of frames actually drawn. Gameplay stamps
  *                  (recoil, launch, queue rotation, the quick-restart arm)
  *                  measure against this, so a park costs them nothing.
- *   ambientClock() the same clock, held at 0 when the player has asked for
- *                  stillness — reduced motion or the power-saver lever. That
- *                  settles every decorative effect on one resting frame at a
- *                  stroke (renderer/style.js documents which motion is
- *                  decoration and why).
- *   emberClock()   the ambient clock quantized to EMBER_HZ. Every lit lantern
- *                  on the board breathes on this, so the field's appearance
- *                  changes ten times a second instead of sixty — which is what
- *                  lets renderer/world.js cache the whole field as one layer
- *                  between ticks. At 10Hz the flicker still reads as a flame;
- *                  what it stops reading as is 400 blended draw calls a frame.
+ *   ambientClock() the decorative clock — star twinkle, water shimmer, the
+ *                  moon's halo breath, the lantern embers. Held at 0 when the
+ *                  player has asked for stillness (reduced motion or the
+ *                  power-saver lever), which settles every decorative effect
+ *                  on one resting frame at a stroke. renderer/style.js
+ *                  documents which motion counts as decoration and why.
+ *
+ *                  It is also QUANTIZED, to AMBIENT_HZ. Decoration is the tier
+ *                  §6d says an idle game should be willing to give up, and a
+ *                  tier that changes ten times a second instead of sixty is
+ *                  one the renderer can cache between ticks — which is exactly
+ *                  what renderer/world.js does with the whole scene. The
+ *                  quantization is what makes the cache possible; without it
+ *                  no two frames are ever alike and there is nothing to reuse.
+ *
+ *                  Gameplay motion never touches this clock, so a shot in
+ *                  flight, the descent and the launcher's recoil stay smooth
+ *                  at whatever cadence the device is running.
  *
  * Deliberately free of DOM and Arcade references: game.js and the renderer
  * both import it, and both have to stay node-importable for the unit suite.
@@ -39,19 +46,18 @@
 // blink rather than a whole animation.
 export const MAX_FRAME_MS = 250;
 
-// Flicker cadence for the lantern field. Ten steps a second is fast enough
-// that an ember reads as alive and slow enough that the field is a cacheable
-// still image between steps.
-export const EMBER_HZ = 10;
-const EMBER_STEP_MS = 1000 / EMBER_HZ;
+// Cadence of the decorative tier. Ten steps a second is fast enough that an
+// ember reads as a flame and the water reads as moving, and slow enough that
+// the scene is a cacheable still image between steps.
+export const AMBIENT_HZ = 10;
+const AMBIENT_STEP_MS = 1000 / AMBIENT_HZ;
 
 let renderMs = 0;
 // -1 means "the next frame is a fresh start, however far off it is" — the
 // state every deliberate park leaves behind.
 let lastFrameMs = -1;
 let ambientSec = 0;
-let emberSec = 0;
-let emberTick = 0;
+let ambientTick = 0;
 
 /**
  * The loop is stopping. Call from every deliberate park/suspend so the gap
@@ -85,12 +91,10 @@ export function advanceClock(nowMs, still) {
   renderMs += dtMs;
   if (still) {
     ambientSec = 0;
-    emberSec = 0;
-    emberTick = 0;
+    ambientTick = 0;
   } else {
-    ambientSec = renderMs / 1000;
-    emberTick = Math.floor(renderMs / EMBER_STEP_MS);
-    emberSec = (emberTick * EMBER_STEP_MS) / 1000;
+    ambientTick = Math.floor(renderMs / AMBIENT_STEP_MS);
+    ambientSec = (ambientTick * AMBIENT_STEP_MS) / 1000;
   }
   return dtMs;
 }
@@ -100,23 +104,21 @@ export function renderClock() {
   return renderMs / 1000;
 }
 
-/** The decorative clock — renderClock(), or 0 when the player asked for stillness. */
+/**
+ * The decorative clock: the render clock quantized to AMBIENT_HZ, or 0 when
+ * the player has asked for stillness.
+ */
 export function ambientClock() {
   return ambientSec;
 }
 
-/** The ambient clock, quantized to EMBER_HZ. */
-export function emberClock() {
-  return emberSec;
-}
-
 /**
- * Integer index of the current ember step. Changes EMBER_HZ times a second
- * while ambience runs and never while it is still, which makes it exactly the
- * cache key for anything whose only motion is the ember.
+ * Integer index of the current decorative step. Changes AMBIENT_HZ times a
+ * second while ambience runs, and never while it is still — which makes it
+ * exactly the cache key for anything whose only motion is decoration.
  */
-export function emberTickIndex() {
-  return emberTick;
+export function ambientTickIndex() {
+  return ambientTick;
 }
 
 /** Test seam: forget every accumulated tick. Not used by the game. */
@@ -124,6 +126,5 @@ export function resetClock() {
   renderMs = 0;
   lastFrameMs = -1;
   ambientSec = 0;
-  emberSec = 0;
-  emberTick = 0;
+  ambientTick = 0;
 }

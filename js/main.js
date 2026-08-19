@@ -4,6 +4,7 @@ import { puzzleConfig, PUZZLE_COUNT } from './puzzles.js';
 import { serializeGame, restoreGame } from './serialization.js';
 import { computeLayout } from './layout.js';
 import { render, resetHudState, isHudSettled, quickRestartWakeMs } from './renderer.js';
+import { invalidateSceneCache } from './renderer/world.js';
 import { getEffectiveDpr, PERF_MODE, setPerfModeOverride, ambientStill } from './renderer/style.js';
 import { attachInput } from './input.js';
 import { loadLanterns, loadBambooSprites, loadMoonTexture, loadHarnessSprite, triggerNewRandomMapping, changeStencilPack } from './assets.js';
@@ -1140,6 +1141,10 @@ attachInput(canvas, () => game, () => layout, {
 window.triggerAdminUpdate = () => {
   settings = readSettings();
   setPerfModeOverride(SYSTEM_OVERRIDES.perfMode);
+  // The admin panel's sliders move the tuning objects the scene draws read
+  // (lantern opacity, bamboo profile, glow intensity, wind). None of those are
+  // worth a cache key of their own, and one hook here covers all of them.
+  invalidateSceneCache();
   if (layout) {
     layout.handedness = SYSTEM_OVERRIDES.handedness !== 'default'
       ? SYSTEM_OVERRIDES.handedness

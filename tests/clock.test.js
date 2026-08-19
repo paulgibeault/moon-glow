@@ -8,7 +8,7 @@ import { test } from "node:test";
 import assert from "node:assert";
 import {
   advanceClock, suspendClock, renderClock, ambientClock,
-  emberClock, emberTickIndex, resetClock, MAX_FRAME_MS, EMBER_HZ,
+  ambientTickIndex, resetClock, MAX_FRAME_MS, AMBIENT_HZ,
 } from "../js/clock.js";
 
 test("the first frame ever admits nothing", () => {
@@ -64,36 +64,37 @@ test("stillness freezes the decorative clocks and not the render clock", () => {
   advanceClock(400, true);
   assert.strictEqual(renderClock(), 0.4, "gameplay keeps its own time under power saver");
   assert.strictEqual(ambientClock(), 0);
-  assert.strictEqual(emberClock(), 0);
-  assert.strictEqual(emberTickIndex(), 0);
+  assert.strictEqual(ambientTickIndex(), 0);
 });
 
-test("the ember clock steps EMBER_HZ times a second and holds between steps", () => {
+test("the ambient clock steps AMBIENT_HZ times a second and holds between steps", () => {
   resetClock();
   advanceClock(0, false);
-  const stepMs = 1000 / EMBER_HZ;
+  const stepMs = 1000 / AMBIENT_HZ;
 
   advanceClock(stepMs * 0.4, false);
-  const first = emberTickIndex();
+  const first = ambientTickIndex();
   advanceClock(stepMs * 0.9, false);
-  assert.strictEqual(emberTickIndex(), first,
+  assert.strictEqual(ambientTickIndex(), first,
     "two frames inside one step must be the same cache key");
-  assert.strictEqual(emberClock(), first / EMBER_HZ);
+  assert.strictEqual(ambientClock(), first / AMBIENT_HZ);
 
   advanceClock(stepMs * 1.1, false);
-  assert.strictEqual(emberTickIndex(), first + 1);
+  assert.strictEqual(ambientTickIndex(), first + 1);
 
-  // A full second of frames is exactly EMBER_HZ steps — the flicker rate the
+  // A full second of frames is exactly AMBIENT_HZ steps — the flicker rate the
   // field cache trades sixty repaints a second for.
   resetClock();
   advanceClock(0, false);
   for (let t = 10; t <= 1000; t += 10) advanceClock(t, false);
-  assert.strictEqual(emberTickIndex(), EMBER_HZ);
+  assert.strictEqual(ambientTickIndex(), AMBIENT_HZ);
 });
 
-test("the ambient clock tracks the render clock while ambience runs", () => {
+test("the ambient clock lands on a step boundary, never between", () => {
   resetClock();
   advanceClock(0, false);
-  advanceClock(500, false);
-  assert.strictEqual(ambientClock(), renderClock());
+  advanceClock(200, false);
+  advanceClock(347, false);
+  assert.strictEqual(renderClock(), 0.347, "the render clock keeps the real time");
+  assert.strictEqual(ambientClock(), 0.3, "the ambient clock quantizes it");
 });

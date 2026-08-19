@@ -77,7 +77,7 @@ export function ambientStill(settings) {
 // what belongs *here* is the policy question of which motion is decoration.
 // Re-exported so the renderer keeps reading its clock from the module that
 // also tells it what stillness means.
-export { ambientClock, emberClock, emberTickIndex } from '../clock.js';
+export { ambientClock, ambientTickIndex } from '../clock.js';
 
 // Touch-primary devices (phones, tablets) get a softer DPR cap and a halved
 // frame rate. The visual cost is small — at arm's length a 1.5× backbuffer is

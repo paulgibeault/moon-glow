@@ -5,8 +5,7 @@
 
 import { PHASE } from './game.js';
 import {
-  drawBackgroundSky, drawCelestialLayer, drawMoonBleed, drawBamboo,
-  drawBoard, drawLauncher, drawShotQueue, drawAimLine, drawProjectile,
+  drawScene, drawLauncher, drawShotQueue, drawAimLine, drawProjectile,
   drawMoonriseWash,
 } from './renderer/world.js';
 import { drawBursts, drawFloats } from './renderer/effects.js';
@@ -28,14 +27,11 @@ export { resetHudState, isHudSettled, quickRestartWakeMs };
 export function render(ctx, layout, game, settings, stats, scores, dtMs) {
   tweenHud(game, settings, dtMs);
 
-  const { viewW, viewH } = layout;
-  drawBackgroundSky(ctx, layout, settings);
-  drawCelestialLayer(ctx, layout, game, settings);
-  drawBamboo(ctx, viewW, viewH, game, settings);
-  drawBoard(ctx, layout, game, settings);
-  // The bleed masks bamboo out of itself before compositing, so bamboo stays
-  // fully opaque and never overdraws lanterns. See drawMoonBleed for details.
-  drawMoonBleed(ctx, layout, settings);
+  // Sky, celestial layer, bamboo, the lantern field and the moon bleed, drawn
+  // as one unit so they can be cached as one. See renderer/world.js — on a
+  // settled board this is a single blit instead of several hundred blended
+  // draw calls.
+  drawScene(ctx, layout, game, settings);
   if (game.phase === PHASE.AIMING && game.queue.current) {
     drawAimLine(ctx, layout, game);
   }
