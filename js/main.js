@@ -20,6 +20,7 @@ import {
 } from './seed-explore.js';
 import { advanceClock, suspendClock, renderClock, ambientTickIndex } from './clock.js';
 import { countDebug, exposeDebug } from './debug.js';
+import { isQuiescent } from './loop-policy.js';
 import { buildGameRecord, recordGame } from './telemetry.js';
 import { sfx, playMatch, startBed, stopBed, setBedPressure } from './sfx.js';
 
@@ -685,24 +686,26 @@ function recordOutcome(g, won) {
   }
 }
 
-function isQuiescent() {
+// Gather what js/loop-policy.js needs to decide whether the screen may rest.
+// The policy itself is a pure function over these booleans; this is the part
+// that has to touch the live game, the menu and the wall clock.
+function quiescent() {
   if (!game || !layout) return false;
-  if (game.loading) return false;
-  if (game.showModeIntroCard) return false;
-  if (game.isPuzzleMode && game.queue.current === null && game.phase !== PHASE.WIN && game.phase !== PHASE.GAME_OVER) return false;
-  if (isMenuPanelOpen()) {
-    if (!isMenuSettled()) return false;
-    return true;
-  }
-  if (game.isSpeedMode && game.phase === PHASE.AIMING) return false;
-  if (game.shots && game.shots.length > 0) return false;
-  if (performance.now() - lastInteractionMs < interactionTailMs()) return false;
-  if (game.phase !== PHASE.AIMING) return false;
-  if (hasActiveEffects(game)) return false;
-  if (!isHudSettled(game)) return false;
-  // Menu fade in/out needs the loop alive — fade tween is view-only state outside the game model.
-  if (!isMenuSettled()) return false;
-  return true;
+  return isQuiescent({
+    hasGame:            true,
+    loading:            !!game.loading,
+    introCard:          !!game.showModeIntroCard,
+    puzzleAwaitingEnd:  !!(game.isPuzzleMode && game.queue.current === null
+                           && game.phase !== PHASE.WIN && game.phase !== PHASE.GAME_OVER),
+    menuOpen:           isMenuPanelOpen(),
+    menuSettled:        isMenuSettled(),
+    speedAiming:        !!(game.isSpeedMode && game.phase === PHASE.AIMING),
+    shotsInFlight:      !!(game.shots && game.shots.length > 0),
+    withinInteractionTail: performance.now() - lastInteractionMs < interactionTailMs(),
+    aiming:             game.phase === PHASE.AIMING,
+    effectsActive:      hasActiveEffects(game),
+    hudSettled:         isHudSettled(game),
+  });
 }
 
 // ─── Gameplay audio ─────────────────────────────────────────────────────────
@@ -857,7 +860,7 @@ function frame(_deltaMs, now) {
 
   // Nothing moving and no recent input: drop off the scheduler entirely until
   // requestFrame() wakes it. stop() is this game's quiescence.
-  if (isQuiescent()) {
+  if (quiescent()) {
     parkLoop();
   }
 }

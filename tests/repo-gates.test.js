@@ -28,3 +28,39 @@ test("every tracked JSON file parses", () => {
       `${f} is not valid JSON`);
   }
 });
+
+// The modules that decide timing and battery policy are pure by contract: no
+// document, no window, no Arcade. That is what lets them be imported in node
+// and asserted directly, instead of being stranded in main.js — whose top
+// level is a script with `await Arcade.ready` and a getElementById, and which
+// is therefore untestable by construction.
+//
+// The line is worth a gate because it is easy to lose by accident: one
+// `performance.now()` reached for inside loop-policy.js and the predicate
+// stops being something a test can state a situation to.
+const PURE_MODULES = ["js/clock.js", "js/loop-policy.js"];
+
+test("the timing and policy modules stay free of the DOM and the SDK", () => {
+  for (const f of PURE_MODULES) {
+    const src = fs.readFileSync(path.join(ROOT, f), "utf8")
+      // Comments describe these things constantly; the gate is about code.
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^[ \t]*\/\/.*$/gm, "");
+    for (const forbidden of ["document", "window", "Arcade", "localStorage"]) {
+      assert.ok(!new RegExp(`\\b${forbidden}\\b`).test(src),
+        `${f} references \`${forbidden}\`. These modules must stay node-importable — ` +
+        "reach the value through a parameter instead.");
+    }
+  }
+});
+
+test("every module the pure ones import is itself pure", () => {
+  // A clean file that imports a DOM-touching one is not clean; the import
+  // graph is what node actually evaluates.
+  for (const f of PURE_MODULES) {
+    const src = fs.readFileSync(path.join(ROOT, f), "utf8");
+    const imports = [...src.matchAll(/^\s*(?:import|export)\s[^;]*?from\s+["'](\.[^"']+)["']/gm)];
+    assert.deepStrictEqual(imports.map((m) => m[1]), [],
+      `${f} imports ${imports.map((m) => m[1]).join(", ")} — keep these modules leaf-level.`);
+  }
+});
