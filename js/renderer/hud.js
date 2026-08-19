@@ -1,6 +1,6 @@
 import { PALETTE, PERF_CONFIG, levelConfig, COLOR_KEYS, COLORS, COMBO_POWERS } from '../constants.js';
 import { STENCIL_PACKS } from '../stencil-packs.js';
-import { PHASE, comboPowersActive } from '../game.js';
+import { PHASE, comboPowersActive, QUICK_RESTART_ARM_SEC } from '../game.js';
 import { puzzleConfig } from '../puzzles.js';
 import {
   SERIF, SANS, HUD_OPACITY,
@@ -9,6 +9,7 @@ import {
 } from './style.js';
 import { getMoonState, drawPhaseShadow, drawLantern } from './world.js';
 import { MENU_RESERVE_PX } from './menu.js';
+import { renderClock } from '../clock.js';
 
 // View-only state that lives outside the game model: the HUD score counter
 // tweens from `displayScore` toward `game.score` so a big swing reads as a
@@ -25,31 +26,74 @@ export function resetHudState(score = 0, best = 0) {
   hudState.prevBest = best;
 }
 
+// Read accessors, so the count-up's timing can be asserted without handing out
+// a write handle on the HUD's private state.
+export function hudDisplayScore() { return hudState.displayScore; }
+export function hudBestFlash() { return hudState.bestFlash; }
+
 // True when the score counter has converged on game.score and the best-flash
 // has decayed to zero — i.e. the next tweenHud call would be a no-op. main.js
 // uses this as part of the "is anything still animating?" check before
 // suspending the rAF loop.
 export function isHudSettled(game) {
-  if (game && game.quickRestartArmed) {
-    const elapsed = performance.now() - game.quickRestartArmedTime;
-    if (elapsed < 3050) {
-      return false;
-    }
-  }
+  // An armed quick-restart button pulses (see drawQuickRestartButton), and a
+  // live animation is a reason to keep drawing. But the pulse rides the
+  // ambient clock, so under stillness it is frozen — and then holding the loop
+  // awake for the whole arm window buys three seconds of identical frames.
+  // main.js parks in that case and schedules a single wake for the expiry;
+  // quickRestartWakeMs() below is how it knows when.
+  if (game && game.quickRestartArmed && ambientClock() !== 0) return false;
   return (hudState.displayScore | 0) === (game.score | 0)
       && hudState.bestFlash === 0;
 }
 
-// Closes ~12% of the gap each frame at 60fps; instant under reducedMotion.
+/**
+ * Milliseconds until the HUD next needs a frame with nothing else driving one,
+ * or Infinity when nothing is pending. Today that is only the quick-restart
+ * arm expiring — a state change on a timer rather than on an event, which is
+ * the one thing a parked loop cannot notice for itself.
+ */
+export function quickRestartWakeMs(game) {
+  if (!game || !game.quickRestartArmed) return Infinity;
+  const remaining = QUICK_RESTART_ARM_SEC - (renderClock() - game.quickRestartArmedTime);
+  return remaining > 0 ? remaining * 1000 : 0;
+}
+
+// Both easings below were written as per-frame constants, which made the
+// counter's speed track the frame rate: at the 33ms cap — every phone, and
+// every power-saver session — the score converged at half speed and the
+// best-flash decayed twice as slowly. That is not only a feel regression. The
+// counter gates isHudSettled(), which gates the loop's park, so the frame-rate
+// saving bought itself twice as long on the scheduler.
+//
+// Both are now expressed against elapsed time and reduce to the old
+// expressions EXACTLY at 1000/60 ms, so 60fps is bit-identical rather than
+// merely close: the exponential keeps 12% of the gap per 60fps frame, and the
+// linear decay keeps its 0.012 per 60fps frame.
+const FRAME_60_MS = 1000 / 60;
+const SCORE_GAP_PER_FRAME = 0.12;
+const BEST_FLASH_DECAY_PER_FRAME = 0.012;
+
+// Closes ~12% of the gap per 60fps frame; instant under reducedMotion.
 // Good enough for a counter — no need for a real spring.
-export function tweenHud(game, settings) {
+//
+// `dtMs` is the frame's admitted time from js/clock.js. It is 0 on the first
+// frame after a park, which correctly contributes nothing.
+export function tweenHud(game, settings, dtMs) {
+  const frames = (dtMs || 0) / FRAME_60_MS;
   if (settings.reducedMotion) {
     hudState.displayScore = game.score;
-  } else if (hudState.displayScore !== game.score) {
+  } else if (hudState.displayScore !== game.score && frames > 0) {
     const diff = game.score - hudState.displayScore;
-    const stepRaw = diff * 0.12;
+    // 1 - 0.88^frames — the compounded form of "keep 12% of the gap", so the
+    // counter covers the same ground per unit time at any cadence.
+    const k = 1 - Math.pow(1 - SCORE_GAP_PER_FRAME, frames);
+    const stepRaw = diff * k;
+    // The minimum step scales with the frame too, so the last few points of
+    // the count-up take the same wall time at 30fps as at 60.
+    const floor = Math.max(1, frames);
     const step = stepRaw === 0 ? 0
-      : (Math.abs(stepRaw) < 1 ? Math.sign(diff) : stepRaw);
+      : (Math.abs(stepRaw) < floor ? Math.sign(diff) * Math.min(floor, Math.abs(diff)) : stepRaw);
     hudState.displayScore += step;
     if ((diff > 0 && hudState.displayScore > game.score) ||
         (diff < 0 && hudState.displayScore < game.score)) {
@@ -61,7 +105,9 @@ export function tweenHud(game, settings) {
     hudState.prevBest = settings.bestScore;
   }
   if (hudState.bestFlash > 0) {
-    hudState.bestFlash = settings.reducedMotion ? 0 : Math.max(0, hudState.bestFlash - 0.012);
+    hudState.bestFlash = settings.reducedMotion
+      ? 0
+      : Math.max(0, hudState.bestFlash - BEST_FLASH_DECAY_PER_FRAME * frames);
   }
 }
 
@@ -1451,13 +1497,8 @@ export function drawQuickRestartButton(ctx, layout, game, settings) {
   if (game.phase === PHASE.WIN || game.phase === PHASE.GAME_OVER || game.showModeIntroCard) return;
 
   const btn = getQuickRestartButtonRect(layout);
-  const now = performance.now();
-  
-  // Auto-disarm check
-  if (game.quickRestartArmed && (now - game.quickRestartArmedTime > 3000)) {
-    game.quickRestartArmed = false;
-  }
-
+  // The arm expires in step(), not here — a draw call that mutates the game is
+  // a layering error, and it never fired once the loop learned to park.
   const armed = game.quickRestartArmed;
   const fs = fontScaleOf(settings);
   

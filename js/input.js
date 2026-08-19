@@ -4,6 +4,8 @@ import {
   handleMenuWheel, rebaseMenuDrag, openMenu, closeMenu,
 } from './renderer/menu.js';
 import { getEndOverlayHit, getQuickRestartButtonRect, QUICK_RESTART_HIT_PAD } from './renderer/hud.js';
+import { renderClock } from './clock.js';
+import { QUICK_RESTART_ARM_SEC } from './game.js';
 
 
 // Top-of-canvas dead-zone for taps. The launcher's topbar (menu, quit, etc.)
@@ -162,8 +164,8 @@ export function attachInput(canvas, getGame, getLayout, callbacks = {}) {
       const pad = QUICK_RESTART_HIT_PAD;
       if (localX >= btn.x - pad && localX <= btn.x + btn.w + pad &&
           localY >= btn.y - pad && localY <= btn.y + btn.h + pad) {
-        const now = performance.now();
-        if (!game.quickRestartArmed || (now - game.quickRestartArmedTime > 3000)) {
+        const now = renderClock();
+        if (!game.quickRestartArmed || (now - game.quickRestartArmedTime > QUICK_RESTART_ARM_SEC)) {
           game.quickRestartArmed = true;
           game.quickRestartArmedTime = now;
         } else {

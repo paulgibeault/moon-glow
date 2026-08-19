@@ -15,6 +15,7 @@ import {
   easeOut, mixWithWhite, mixWithBlack, hexToRgba,
   getEffectiveDpr, PERF_MODE, ambientStill, ambientClock,
 } from './style.js';
+import { renderClock } from '../clock.js';
 
 // ─── Sky, moon, bamboo ──────────────────────────────────────────────────────
 
@@ -1846,7 +1847,12 @@ export function drawReflections(ctx, layout, game, settings) {
     }
   }
 
-  const jitterTSec = reducedMotion ? 0 : performance.now() / 1000;
+  // The render clock, not the wall clock — the loop parks between descents and
+  // a wall-clock read would count the park as jitter that already played.
+  // Still gated on reducedMotion alone rather than ambientStill: this jitter
+  // mirrors the descent, which is the game talking to the player, so power
+  // saver keeps it (the shimmer above, which is ambience, it drops).
+  const jitterTSec = reducedMotion ? 0 : renderClock();
   for (const l of board.lanterns) {
     if (l.drown && l.drown.extinguished) continue;
     let dx = l.x, dy = l.y;
@@ -1990,7 +1996,10 @@ export function drawBoard(ctx, layout, game, settings) {
   // Wind sway is the field breathing while the player thinks — the one branch
   // here that isn't answering a game event, so it's the one power saver drops.
   const still = ambientStill(settings);
-  const tSec = reducedMotion ? 0 : performance.now() / 1000;
+  // Gameplay motion (descent jitter, the moonrise jiggle) rides the render
+  // clock so a park never reads as motion that already happened; the sway
+  // branch below is the ambient one and gates on `still` for itself.
+  const tSec = reducedMotion ? 0 : renderClock();
   for (const l of board.lanterns) {
     let dx = l.x, dy = l.y;
     if (l.anim) {
@@ -2721,7 +2730,11 @@ function drawLauncherAssembly(ctx, layout, game, tSec, isReflection) {
 export function drawLauncher(ctx, layout, game) {
   const tip = launcherTip(layout);
   const r = layout.size;
-  const tSec = performance.now() / 1000;
+  // Recoil and launch are measured against game.recoilTime / lastLaunchTime,
+  // which game.js stamps from this same clock (js/clock.js). Reading the wall
+  // clock here instead would make a recoil interrupted by a park or a screen
+  // lock read as finished on the first frame back.
+  const tSec = renderClock();
   
   const wheelSprite = getLauncherWheelSprite();
 
