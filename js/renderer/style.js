@@ -65,20 +65,19 @@ export function ambientStill(settings) {
 }
 
 // The ambient clock — the single time source every decorative effect reads
-// instead of calling performance.now() for itself. render() winds it once per
-// frame; when the player has asked for stillness it holds at zero, which
-// settles the lantern flames, the burner flicker and its sparks, the star
-// twinkle, the halo breath and the water shimmer onto one resting frame at a
-// stroke. Gameplay motion keeps its own physical clock, so shots, descent and
-// the launcher's recoil are untouched. One clock also means every effect in a
-// frame agrees on what time it is.
-let ambientTSec = 0;
-export function setAmbientClock(settings) {
-  ambientTSec = ambientStill(settings) ? 0 : performance.now() / 1000;
-}
-export function ambientClock() {
-  return ambientTSec;
-}
+// instead of calling performance.now() for itself. main.js winds it once per
+// rendered frame; when the player has asked for stillness it holds at zero,
+// which settles the lantern flames, the burner flicker and its sparks, the
+// star twinkle, the halo breath and the water shimmer onto one resting frame
+// at a stroke. One clock also means every effect in a frame agrees on what
+// time it is.
+//
+// It lives in js/clock.js, alongside the render clock that gameplay stamps
+// measure against and the quantized ember clock the field cache is keyed on —
+// what belongs *here* is the policy question of which motion is decoration.
+// Re-exported so the renderer keeps reading its clock from the module that
+// also tells it what stillness means.
+export { ambientClock, ambientTickIndex } from '../clock.js';
 
 // Touch-primary devices (phones, tablets) get a softer DPR cap and a halved
 // frame rate. The visual cost is small — at arm's length a 1.5× backbuffer is

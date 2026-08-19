@@ -1,4 +1,4 @@
-import { COLORS, PALETTE, PERF_CONFIG, MOON_OVERRIDE, ENV_PARAMS, SYSTEM_OVERRIDES } from '../constants.js';
+import { COLORS, PALETTE, MOON_OVERRIDE, ENV_PARAMS, SYSTEM_OVERRIDES } from '../constants.js';
 import { launcherTip, traceAimLine, PHASE } from '../game.js';
 import { rippleBoost } from '../effects.js';
 import {
@@ -8,13 +8,16 @@ import {
   getMoonTexture,
   getLauncherWheelSprite,
   getFlameSheet,
+  spriteEpoch,
 } from '../assets.js';
 import { mulberry32 } from '../prng.js';
 import {
-  SERIF, SANS, HUD_OPACITY,
+  HUD_OPACITY,
   easeOut, mixWithWhite, mixWithBlack, hexToRgba,
   getEffectiveDpr, PERF_MODE, ambientStill, ambientClock,
 } from './style.js';
+import { renderClock, ambientTickIndex } from '../clock.js';
+import { countDebug, debugFlags } from '../debug.js';
 
 // ─── Sky, moon, bamboo ──────────────────────────────────────────────────────
 
@@ -191,7 +194,7 @@ function getStars(w, h) {
 let skyBaseGrad = { ctx: null, h: 0, grad: null };
 let skyBandGrad = { ctx: null, key: '', grad: null };
 
-export function drawBackgroundSky(ctx, layout, settings) {
+function drawBackgroundSky(ctx, layout, settings) {
   const { viewW: w, viewH: h } = layout;
   // Base indigo gradient — unchanged look, now reused across frames.
   if (skyBaseGrad.ctx !== ctx || skyBaseGrad.h !== h) {
@@ -262,7 +265,7 @@ function ensureStarfieldCanvas(w, h, dpr, allStatic) {
   return canvas;
 }
 
-export function drawStars(ctx, layout, settings) {
+function drawStars(ctx, layout, settings) {
   const { viewW: w, viewH: h } = layout;
   const dpr = getEffectiveDpr();
   // Twinkle is pure ambience: it costs a per-frame pass over the whole star
@@ -331,18 +334,21 @@ function ensureGlowCanvas(w, h, dpr) {
 }
 
 
-export function drawCelestialLayer(ctx, layout, game, settings) {
+// The celestial layer used to fork on PERF_MODE: mouse-primary devices went
+// through the offscreen (which is what makes the bamboo mask-out possible),
+// and touch devices — the ones with the battery — skipped it and repainted the
+// moon, its phase shadow, the reflection column and the waterline straight to
+// the screen every frame. One blit saved, a whole celestial layer paid for,
+// and the two device classes did not even agree on whether bamboo occludes the
+// stars.
+//
+// The fork is gone now that the scene above is cached: this runs on a rebuild,
+// which is ten times a second at most and not at all while the board is
+// settled under stillness. The extra blit is affordable at that rate, and both
+// device classes draw the same picture.
+function drawCelestialLayer(ctx, layout, game, settings) {
   const { viewW, viewH } = layout;
   const dpr = getEffectiveDpr();
-
-  if (PERF_MODE) {
-    // A. Draw Stars, Moon, Reflections, and Waterline directly onto the main canvas
-    drawStars(ctx, layout, settings);
-    drawMoon(ctx, layout, game, settings);
-    drawReflections(ctx, layout, game, settings);
-    drawWaterline(ctx, layout);
-    return;
-  }
 
   const cCanvas = ensureCelestialCanvas(viewW, viewH, dpr);
   const cCtx = cCanvas.getContext('2d');
@@ -501,7 +507,7 @@ export function drawPhaseShadow(ctx, cx, cy, r, phase01, layout, customColor) {
 // dips into the water with its halo and rim still attached; the disc is
 // clipped at the horizon so the lower limb appears to slip below the surface
 // rather than sit on it.
-export function drawMoon(ctx, layout, game, settings) {
+function drawMoon(ctx, layout, game, settings) {
   const reducedMotion = !!settings.reducedMotion;
   const m = moonState(layout, settings, Date.now());
   const { cx, cy, r, altitude, horizonY, phase01 } = m;
@@ -898,7 +904,7 @@ function paintBleed(canvas, m, viewW, viewH, deadLineY, handedness) {
   }
 }
 
-export function drawMoonBleed(ctx, layout, settings) {
+function drawMoonBleed(ctx, layout, settings) {
   const m = moonState(layout, settings, Date.now());
   if (m.altitude <= 0.02) return;
   const { viewW, viewH } = layout;
@@ -979,7 +985,7 @@ const BAMBOO_LEVEL_MULT = 0x9E3779B9;
 // copied here from its "Copy JSON" button after playtesting.
 // The non-profile keys (caneTopperScale, tipTrunkFrac) are appended via
 // COMMON_DEFAULTS so both profiles share them.
-export const BAMBOO_PROFILE_SMALL = Object.freeze({
+const BAMBOO_PROFILE_SMALL = Object.freeze({
   edgeBand:           0.26,
   towersPerSide:      1,
   trunksPerSide:      4,
@@ -994,7 +1000,7 @@ export const BAMBOO_PROFILE_SMALL = Object.freeze({
   baseGrassFrac:      0.47,
   bankYFrac:          0.995,
 });
-export const BAMBOO_PROFILE_WIDE = Object.freeze({
+const BAMBOO_PROFILE_WIDE = Object.freeze({
   edgeBand:           0.26,
   towersPerSide:      2,
   trunksPerSide:      3,
@@ -1076,12 +1082,12 @@ function ensureBambooCache(w, h, dpr, level) {
   return bambooCache;
 }
 
-export function getBambooMaskCanvas(w, h, dpr, level) {
+function getBambooMaskCanvas(w, h, dpr, level) {
   const cache = ensureBambooCache(w, h, dpr, level);
   return cache.maskCanvas;
 }
 
-export function drawBamboo(ctx, w, h, game, settings) {
+function drawBamboo(ctx, w, h, game, settings) {
   const dpr = getEffectiveDpr();
   const gameLevel = ((game && game.level) | 0) || 1;
   const level = (BAMBOO_PARAMS.levelOverride | 0) || gameLevel;
@@ -1769,7 +1775,7 @@ function drawHangingSprite(ctx, sprite, cx, yAnchor, drawW, drawH, rotation, hFl
 // main canvas (PERF) are distinct; only one is used per session.
 let waterlineGrad = { ctx: null, w: 0, grad: null };
 
-export function drawWaterline(ctx, layout) {
+function drawWaterline(ctx, layout) {
   const { viewW, deadLineY } = layout;
   ctx.save();
   if (waterlineGrad.ctx !== ctx || waterlineGrad.w !== viewW) {
@@ -1793,7 +1799,38 @@ export function drawWaterline(ctx, layout) {
 // Lit reflections (rather than dark silhouettes) keep the flame's warm glow
 // shimmering on the surface; reduced intensity + low global alpha keeps the
 // effect subordinate to the real lanterns above.
-export function drawReflections(ctx, layout, game, settings) {
+// Moon-column reflection gradients, one per slice, built at the local origin
+// so a slice's shimmer offset is a translate rather than a rebuild. Keyed by
+// context, because the column is painted onto the celestial offscreen on a
+// cached rebuild and straight onto the screen while the field is in motion,
+// and a gradient belongs to the context that made it. Rebuilt only when the
+// moon's radius, the column's brightness or the slice count changes — which is
+// to say, every few seconds rather than every frame.
+const reflectionGradCaches = new WeakMap();
+
+function reflectionGrads(ctx, r, intensity, slices) {
+  const key = `${Math.round(r * 4)}|${Math.round(intensity * 200)}|${slices}`;
+  let entry = reflectionGradCaches.get(ctx);
+  if (entry && entry.key === key) return entry.grads;
+
+  const grads = new Array(slices);
+  for (let i = 0; i < slices; i++) {
+    const f = i / (slices - 1);
+    const vAlpha = Math.pow(1 - f, 1.6);
+    const halfW = r * (0.9 + f * 0.7);
+    const a = (0.50 * vAlpha * intensity).toFixed(3);
+    const g = ctx.createLinearGradient(-halfW, 0, halfW, 0);
+    g.addColorStop(0,   'rgba(245, 198, 132, 0)');
+    g.addColorStop(0.5, `rgba(245, 198, 132, ${a})`);
+    g.addColorStop(1,   'rgba(245, 198, 132, 0)');
+    grads[i] = g;
+  }
+  entry = { key, grads };
+  reflectionGradCaches.set(ctx, entry);
+  return grads;
+}
+
+function drawReflections(ctx, layout, game, settings) {
   const { viewW, viewH, deadLineY } = layout;
   if (deadLineY >= viewH) return;
   const board = game.board;
@@ -1824,6 +1861,14 @@ export function drawReflections(ctx, layout, game, settings) {
     const tNow = ambientClock();
     const SLICES = PERF_MODE ? 12 : 24;
     const sliceH = length / SLICES;
+    // One gradient per slice, built at the local origin and reused. They were
+    // rebuilt from scratch every frame — twenty-four createLinearGradient calls
+    // with three colour stops each, for a column whose geometry only changes
+    // when the moon moves. Building them centred on 0 and translating to the
+    // slice's shimmer offset is what makes them reusable: in absolute
+    // coordinates the shimmer moved the gradient's own endpoints, so no two
+    // frames could share one.
+    const grads = reflectionGrads(ctx, m.r, intensity, SLICES);
     for (let i = 0; i < SLICES; i++) {
       const f = i / (SLICES - 1);
       const vAlpha = Math.pow(1 - f, 1.6);   // bias the brightness to the top
@@ -1836,17 +1881,20 @@ export function drawReflections(ctx, layout, game, settings) {
       // Widen toward the base — the reflection spreads as it crosses the
       // moon's distance over the water surface.
       const halfW = m.r * (0.9 + f * 0.7);
-      const a = (0.50 * vAlpha * intensity).toFixed(3);
-      const grad = ctx.createLinearGradient(cxJ - halfW, 0, cxJ + halfW, 0);
-      grad.addColorStop(0,   'rgba(245, 198, 132, 0)');
-      grad.addColorStop(0.5, `rgba(245, 198, 132, ${a})`);
-      grad.addColorStop(1,   'rgba(245, 198, 132, 0)');
-      ctx.fillStyle = grad;
-      ctx.fillRect(cxJ - halfW, sliceY, halfW * 2, sliceH + 1);
+      ctx.save();
+      ctx.translate(cxJ, 0);
+      ctx.fillStyle = grads[i];
+      ctx.fillRect(-halfW, sliceY, halfW * 2, sliceH + 1);
+      ctx.restore();
     }
   }
 
-  const jitterTSec = reducedMotion ? 0 : performance.now() / 1000;
+  // The render clock, not the wall clock — the loop parks between descents and
+  // a wall-clock read would count the park as jitter that already played.
+  // Still gated on reducedMotion alone rather than ambientStill: this jitter
+  // mirrors the descent, which is the game talking to the player, so power
+  // saver keeps it (the shimmer above, which is ambience, it drops).
+  const jitterTSec = reducedMotion ? 0 : renderClock();
   for (const l of board.lanterns) {
     if (l.drown && l.drown.extinguished) continue;
     let dx = l.x, dy = l.y;
@@ -1982,7 +2030,181 @@ function moonriseJiggle(l, layout, env, tSec) {
   };
 }
 
-export function drawBoard(ctx, layout, game, settings) {
+// ─── The scene cache ────────────────────────────────────────────────────────
+//
+// Sky, celestial layer, bamboo, the lantern field and the moon bleed are the
+// first five draws of every frame and the only five that form a contiguous,
+// self-contained prefix: nothing after them draws underneath them, and nothing
+// in them reads anything the player is actively moving. On a settled board —
+// which is where this game spends most of its life, including the whole of a
+// shot's flight — they produce the same image frame after frame.
+//
+// The expensive one is the field. Each lantern costs an ember halo, a sprite,
+// a tint, an ember core, a flame and a fuel core, three of those composited
+// with 'lighter'; a mid-game board of ~60 lamps is around 400 blended draw
+// calls, repeated thirty to sixty times a second to paint the same picture.
+//
+// The field cannot be cached on its own, and the reason is the 'lighter'
+// compositing: the halos ADD to the sky behind them, which is where the glow
+// comes from. On a transparent layer they would add to nothing and then blend
+// normally on the way down, and the field would visibly dull. So the cached
+// unit is the whole prefix, backdrop included, and the additive composite
+// happens against the real sky exactly as it does today.
+//
+// What makes it cacheable at all is that the decorative clock is quantized
+// (js/clock.js): the embers, the twinkle and the shimmer step AMBIENT_HZ times
+// a second rather than continuously, so between steps there is genuinely
+// nothing to redraw. Under stillness the clock holds at 0 and the scene is one
+// blit for as long as the board is settled — which is the whole point of the
+// power-saver lever.
+//
+// Anything actually in motion — a descent, a drowning, the moonrise jiggle, a
+// live ripple, or wind sway if the admin panel turned it on — makes
+// fieldSignature() return null and the scene draws straight to the screen at
+// full cost, as before. Those are brief and they are motion the player asked
+// to see.
+let sceneCache = null;
+let sceneEpoch = 0;
+
+/**
+ * Drop the cached scene. For changes that are not worth a cache key of their
+ * own: the admin panel's live tuning sliders, which can move any of the
+ * PARAMS objects the draws below read.
+ */
+export function invalidateSceneCache() {
+  sceneEpoch++;
+}
+
+// FNV-1a, over the numbers and short strings that decide what the scene looks
+// like. Cheap enough to run per lantern per frame — around eighty iterations
+// of integer math against the four hundred blended draws it saves.
+function hashInit() { return 0x811c9dc5; }
+function hashNum(h, n) {
+  h ^= (n | 0);
+  return Math.imul(h, 0x01000193) >>> 0;
+}
+function hashStr(h, str) {
+  if (!str) return hashNum(h, 0);
+  for (let i = 0; i < str.length; i++) h = hashNum(h, str.charCodeAt(i));
+  return h;
+}
+
+/**
+ * A number that changes whenever the lantern field would draw differently, or
+ * null when the field is in motion and no cached image could be valid.
+ */
+function fieldSignature(game, layout, still) {
+  const board = game.board;
+  if ((board.descentAnimY || 0) !== 0) return null;
+  if (game.moonriseFx && game.moonriseFx.jiggle > 0) return null;
+  if (game.ripples && game.ripples.length > 0) return null;
+  // Wind sway is off by default (ENV_PARAMS.windSpeed is 0) and is a tuning
+  // slider rather than a shipped effect; when it is on, every lantern drifts
+  // continuously and there is nothing still to cache. Stillness drops it,
+  // which puts the cache back.
+  if (!still && (ENV_PARAMS.windSpeed || 0) > 0) return null;
+
+  const lanterns = board.lanterns;
+  let h = hashInit();
+  h = hashNum(h, lanterns.length);
+  for (let i = 0; i < lanterns.length; i++) {
+    const l = lanterns[i];
+    if (l.anim || l.drown) return null;
+    // Quarter-pixel is finer than anything the eye resolves and far finer than
+    // any position this game produces without an .anim on the lantern.
+    h = hashNum(h, Math.round(l.x * 4));
+    h = hashNum(h, Math.round(l.y * 4));
+    h = hashNum(h, (l.isTarget ? 1 : 0) | (l.isBlocker ? 2 : 0));
+    h = hashStr(h, l.color);
+    h = hashStr(h, l.designId);
+  }
+  return h;
+}
+
+// Everything outside the field that the five draws read. The moon is bucketed
+// rather than exact: it drifts about a quarter-pixel a second, so rounding its
+// geometry rebuilds the scene every few seconds instead of every frame.
+function backdropSignature(layout, game, settings, still) {
+  const m = moonState(layout, settings, Date.now());
+  let h = hashInit();
+  h = hashNum(h, sceneEpoch);
+  h = hashNum(h, ambientTickIndex());
+  h = hashNum(h, spriteEpoch());
+  h = hashNum(h, still ? 1 : 0);
+  h = hashNum(h, PERF_MODE ? 1 : 0);
+  h = hashNum(h, layout.viewW);
+  h = hashNum(h, layout.viewH);
+  h = hashNum(h, Math.round(layout.size * 16));
+  h = hashNum(h, Math.round(layout.deadLineY));
+  h = hashNum(h, ((BAMBOO_PARAMS.levelOverride | 0) || ((game && game.level) | 0) || 1));
+  h = hashNum(h, Math.round(m.cx));
+  h = hashNum(h, Math.round(m.cy));
+  h = hashNum(h, Math.round(m.r));
+  h = hashNum(h, Math.round(m.altitude * 100));
+  h = hashNum(h, Math.round(m.phase01 * 1000));
+  h = hashStr(h, SYSTEM_OVERRIDES.handedness);
+  return h;
+}
+
+function ensureSceneCanvas(w, h, dpr) {
+  const pw = Math.max(1, Math.floor(w * dpr));
+  const ph = Math.max(1, Math.floor(h * dpr));
+  if (sceneCache && sceneCache.canvas.width === pw && sceneCache.canvas.height === ph) {
+    return sceneCache;
+  }
+  const canvas = document.createElement('canvas');
+  canvas.width = pw;
+  canvas.height = ph;
+  const cctx = canvas.getContext('2d');
+  cctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  sceneCache = { canvas, ctx: cctx, key: null };
+  return sceneCache;
+}
+
+// The five draws, in the order render() used to make them.
+function paintScene(target, layout, game, settings) {
+  const { viewW, viewH } = layout;
+  drawBackgroundSky(target, layout, settings);
+  drawCelestialLayer(target, layout, game, settings);
+  drawBamboo(target, viewW, viewH, game, settings);
+  drawField(target, layout, game, settings);
+  // The bleed masks bamboo out of itself before compositing, so bamboo stays
+  // fully opaque and never overdraws lanterns. See drawMoonBleed for details.
+  drawMoonBleed(target, layout, settings);
+}
+
+/**
+ * Draw the whole static prefix of the frame — sky through moon bleed — from
+ * cache when nothing in it has changed, and straight to the screen when
+ * something has.
+ */
+export function drawScene(ctx, layout, game, settings) {
+  const still = ambientStill(settings);
+  const field = debugFlags.noSceneCache ? null : fieldSignature(game, layout, still);
+  if (field === null) {
+    // Something in the field is moving. Draw it live, and let go of the cache:
+    // holding a full-screen backbuffer through a long cascade costs memory for
+    // an image that is wrong on every frame of it.
+    sceneCache = null;
+    countDebug('sceneLive');
+    paintScene(ctx, layout, game, settings);
+    return;
+  }
+
+  const { viewW, viewH } = layout;
+  const key = hashNum(backdropSignature(layout, game, settings, still), field);
+  const cache = ensureSceneCanvas(viewW, viewH, getEffectiveDpr());
+  if (cache.key !== key) {
+    countDebug('sceneRepaint');
+    cache.ctx.clearRect(0, 0, viewW, viewH);
+    paintScene(cache.ctx, layout, game, settings);
+    cache.key = key;
+  }
+  countDebug('sceneBlit');
+  ctx.drawImage(cache.canvas, 0, 0, viewW, viewH);
+}
+
+function drawField(ctx, layout, game, settings) {
   const board = game.board;
   const { size, viewH } = layout;
   const animY = board.descentAnimY || 0;
@@ -1990,7 +2212,10 @@ export function drawBoard(ctx, layout, game, settings) {
   // Wind sway is the field breathing while the player thinks — the one branch
   // here that isn't answering a game event, so it's the one power saver drops.
   const still = ambientStill(settings);
-  const tSec = reducedMotion ? 0 : performance.now() / 1000;
+  // Gameplay motion (descent jitter, the moonrise jiggle) rides the render
+  // clock so a park never reads as motion that already happened; the sway
+  // branch below is the ambient one and gates on `still` for itself.
+  const tSec = reducedMotion ? 0 : renderClock();
   for (const l of board.lanterns) {
     let dx = l.x, dy = l.y;
     if (l.anim) {
@@ -2721,7 +2946,11 @@ function drawLauncherAssembly(ctx, layout, game, tSec, isReflection) {
 export function drawLauncher(ctx, layout, game) {
   const tip = launcherTip(layout);
   const r = layout.size;
-  const tSec = performance.now() / 1000;
+  // Recoil and launch are measured against game.recoilTime / lastLaunchTime,
+  // which game.js stamps from this same clock (js/clock.js). Reading the wall
+  // clock here instead would make a recoil interrupted by a park or a screen
+  // lock read as finished on the first frame back.
+  const tSec = renderClock();
   
   const wheelSprite = getLauncherWheelSprite();
 

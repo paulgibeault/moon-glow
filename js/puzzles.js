@@ -69,7 +69,6 @@
 //     fixture become unreachable or land in the water. Keep the final pop's
 //     pocket on an open flank at most one row under the structure.
 
-import { COLOR_KEYS, COLORS } from './constants.js';
 
 export const DEFAULT_CHAR_MAP = Object.freeze({
   'R': { color: 'red' },

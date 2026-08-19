@@ -5,37 +5,33 @@
 
 import { PHASE } from './game.js';
 import {
-  drawBackgroundSky, drawCelestialLayer, drawMoonBleed, drawBamboo,
-  drawBoard, drawLauncher, drawShotQueue, drawAimLine, drawProjectile,
+  drawScene, drawLauncher, drawShotQueue, drawAimLine, drawProjectile,
   drawMoonriseWash,
 } from './renderer/world.js';
 import { drawBursts, drawFloats } from './renderer/effects.js';
 import {
   tweenHud, drawScoreHud, drawDescentMeter, drawComboMeter, drawEndOverlay, resetHudState,
   isHudSettled, drawModeIntroCard, drawLanternInventory, drawQuickRestartButton,
-  drawLoadingOverlay, drawRightNotices,
+  drawLoadingOverlay, drawRightNotices, quickRestartWakeMs,
 } from './renderer/hud.js';
 import { drawMenu } from './renderer/menu.js';
-import { setAmbientClock } from './renderer/style.js';
 
 export { computeLayout } from './layout.js';
-export { resetHudState, isHudSettled };
+export { resetHudState, isHudSettled, quickRestartWakeMs };
 
-export function render(ctx, layout, game, settings, stats, scores) {
-  // Wind the ambient clock for this frame. Every decorative effect below reads
-  // it instead of the wall clock, so reduced motion and power saver settle all
-  // of them together (renderer/style.js, GAME_INTEGRATION §5/§6d).
-  setAmbientClock(settings);
-  tweenHud(game, settings);
+// `dtMs` is the time this frame is allowed to admit — 0 on the first frame
+// after a park, capped otherwise. It comes from js/clock.js via main.js, which
+// winds the clocks before stepping the game so gameplay stamps and the drawing
+// below agree on what time it is. Everything here that animates on elapsed
+// time takes it from that clock rather than reading the wall clock for itself.
+export function render(ctx, layout, game, settings, stats, scores, dtMs) {
+  tweenHud(game, settings, dtMs);
 
-  const { viewW, viewH } = layout;
-  drawBackgroundSky(ctx, layout, settings);
-  drawCelestialLayer(ctx, layout, game, settings);
-  drawBamboo(ctx, viewW, viewH, game, settings);
-  drawBoard(ctx, layout, game, settings);
-  // The bleed masks bamboo out of itself before compositing, so bamboo stays
-  // fully opaque and never overdraws lanterns. See drawMoonBleed for details.
-  drawMoonBleed(ctx, layout, settings);
+  // Sky, celestial layer, bamboo, the lantern field and the moon bleed, drawn
+  // as one unit so they can be cached as one. See renderer/world.js — on a
+  // settled board this is a single blit instead of several hundred blended
+  // draw calls.
+  drawScene(ctx, layout, game, settings);
   if (game.phase === PHASE.AIMING && game.queue.current) {
     drawAimLine(ctx, layout, game);
   }

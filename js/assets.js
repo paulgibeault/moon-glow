@@ -166,8 +166,22 @@ function measureBbox(image) {
   return { sx: minX, sy: minY, sw: maxX - minX + 1, sh: maxY - minY + 1 };
 }
 
+// Every sprite that appears or changes goes through record() — the initial
+// load, a stencil-pack switch, a fresh random mapping, and the lazy
+// per-design rasterizations getLanternSprite() performs on demand. So this is
+// the one place that can say "what the renderer would draw is not what it was
+// drawing a moment ago", and the scene cache in renderer/world.js reads the
+// counter rather than asking every caller to remember to invalidate.
+let epoch = 0;
+
 function record(key, image, bbox) {
   sprites[key] = { image, ...bbox };
+  epoch++;
+}
+
+/** Bumped whenever the sprite table changes. A cache key, nothing more. */
+export function spriteEpoch() {
+  return epoch;
 }
 
 async function rasterizeSvg(svg, width, height) {

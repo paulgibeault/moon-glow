@@ -3,20 +3,24 @@ import { createGame, step, PHASE, hasActiveEffects } from './game.js';
 import { puzzleConfig, PUZZLE_COUNT } from './puzzles.js';
 import { serializeGame, restoreGame } from './serialization.js';
 import { computeLayout } from './layout.js';
-import { render, resetHudState, isHudSettled } from './renderer.js';
+import { render, resetHudState, isHudSettled, quickRestartWakeMs } from './renderer.js';
+import { invalidateSceneCache } from './renderer/world.js';
 import { getEffectiveDpr, PERF_MODE, setPerfModeOverride, ambientStill } from './renderer/style.js';
 import { attachInput } from './input.js';
-import { loadLanterns, loadBambooSprites, loadMoonTexture, loadHarnessSprite, triggerNewRandomMapping, changeStencilPack } from './assets.js';
+import { loadLanterns, loadBambooSprites, loadMoonTexture, loadHarnessSprite, changeStencilPack } from './assets.js';
 import { syncLanternPixels } from './board.js';
 import { initAdminPanel } from './admin-panel.js';
 import { designForCell } from './stencil-packs.js';
 import {
-  isMenuOpen, isMenuPanelOpen, isMenuSettled, tickMenu, closeMenu, openMenuToLevelSelector,
+  isMenuPanelOpen, isMenuSettled, tickMenu, closeMenu, openMenuToLevelSelector,
   openMenuToExplore, openMenuToSeeds,
 } from './renderer/menu.js';
 import {
   exploreState, ensureExplore, shuffleAll, setSeeds, pushSeedHistory, effectiveConfig,
 } from './seed-explore.js';
+import { advanceClock, suspendClock, renderClock, ambientTickIndex } from './clock.js';
+import { countDebug, exposeDebug } from './debug.js';
+import { isQuiescent } from './loop-policy.js';
 import { buildGameRecord, recordGame } from './telemetry.js';
 import { sfx, playMatch, startBed, stopBed, setBedPressure } from './sfx.js';
 
@@ -217,7 +221,6 @@ let game = null;
 // would resurrect a hidden iframe's animation loop.
 let launcherSuspended = false;
 let docHidden = document.visibilityState === 'hidden';
-let lastTime = 0;
 // The SDK owns the frame loop. Every canvas game hand-wired "cancel on
 // suspend, re-request on resume" and the fleet got a different leg of it wrong
 // in each repo; Arcade.loop owns that, and suspended time never appears in a
@@ -334,9 +337,7 @@ function startGame(g) {
   saveGameState(game);
   lastPhase = game.phase;
 
-  if (typeof window !== 'undefined') {
-    window.game = game;
-  }
+  exposeDebug('game', game);
 }
 
 function readSettings() {
@@ -685,24 +686,26 @@ function recordOutcome(g, won) {
   }
 }
 
-function isQuiescent() {
+// Gather what js/loop-policy.js needs to decide whether the screen may rest.
+// The policy itself is a pure function over these booleans; this is the part
+// that has to touch the live game, the menu and the wall clock.
+function quiescent() {
   if (!game || !layout) return false;
-  if (game.loading) return false;
-  if (game.showModeIntroCard) return false;
-  if (game.isPuzzleMode && game.queue.current === null && game.phase !== PHASE.WIN && game.phase !== PHASE.GAME_OVER) return false;
-  if (isMenuPanelOpen()) {
-    if (!isMenuSettled()) return false;
-    return true;
-  }
-  if (game.isSpeedMode && game.phase === PHASE.AIMING) return false;
-  if (game.shots && game.shots.length > 0) return false;
-  if (performance.now() - lastInteractionMs < interactionTailMs()) return false;
-  if (game.phase !== PHASE.AIMING) return false;
-  if (hasActiveEffects(game)) return false;
-  if (!isHudSettled(game)) return false;
-  // Menu fade in/out needs the loop alive — fade tween is view-only state outside the game model.
-  if (!isMenuSettled()) return false;
-  return true;
+  return isQuiescent({
+    hasGame:            true,
+    loading:            !!game.loading,
+    introCard:          !!game.showModeIntroCard,
+    puzzleAwaitingEnd:  !!(game.isPuzzleMode && game.queue.current === null
+                           && game.phase !== PHASE.WIN && game.phase !== PHASE.GAME_OVER),
+    menuOpen:           isMenuPanelOpen(),
+    menuSettled:        isMenuSettled(),
+    speedAiming:        !!(game.isSpeedMode && game.phase === PHASE.AIMING),
+    shotsInFlight:      !!(game.shots && game.shots.length > 0),
+    withinInteractionTail: performance.now() - lastInteractionMs < interactionTailMs(),
+    aiming:             game.phase === PHASE.AIMING,
+    effectsActive:      hasActiveEffects(game),
+    hudSettled:         isHudSettled(game),
+  });
 }
 
 // ─── Gameplay audio ─────────────────────────────────────────────────────────
@@ -822,11 +825,19 @@ function frame(_deltaMs, now) {
   if (launcherSuspended || docHidden || !layout) { frameLoop.stop(); return; }
   const limitMs = targetFrameMs();
   // Under the FPS cap, consume the frame without doing work — the loop stays
-  // started, so the next frame arrives on its own.
+  // started, so the next frame arrives on its own. Deliberately BEFORE the
+  // clock is wound: js/clock.js accumulates time between frames that actually
+  // rendered, and a frame that returns here drew nothing.
   if (limitMs && (now - lastFrameMs) < limitMs - 1) return;
   lastFrameMs = now;
-  const dt = lastTime === 0 ? 0 : Math.min(0.05, (now - lastTime) / 1000);
-  lastTime = now;
+  // One wind per rendered frame, before step() — the gameplay stamps it sets
+  // (recoil, launch, queue rotation) are read back by the renderer below, so
+  // both halves of the frame have to agree on what time it is. dtMs is 0 on
+  // the first frame after a park and capped otherwise, which is what keeps a
+  // parked, suspended or pocket-locked gap out of every animation downstream.
+  countDebug('frame');
+  const dtMs = advanceClock(now, ambientStill(settings));
+  const dt = Math.min(0.05, dtMs / 1000);
   const menuOpen = isMenuPanelOpen();
   const phaseAnimating =
     game.phase === PHASE.FLYING ||
@@ -845,14 +856,39 @@ function frame(_deltaMs, now) {
   // and moon halo respond to view-only state that lives outside
   // hasActiveEffects(). Once everything settles, isQuiescent() pulls the loop
   // off the scheduler entirely until requestFrame() wakes it up.
-  render(ctx, layout, game, settings, cachedStats, cachedScores);
+  render(ctx, layout, game, settings, cachedStats, cachedScores, dtMs);
 
   // Nothing moving and no recent input: drop off the scheduler entirely until
   // requestFrame() wakes it. stop() is this game's quiescence.
-  if (isQuiescent()) {
-    frameLoop.stop();
-    lastTime = 0;
+  if (quiescent()) {
+    parkLoop();
   }
+}
+
+// Park the loop and, if some state change is due on a timer rather than on an
+// event, book the one frame that has to notice it. A parked loop cannot watch
+// a deadline for itself, and spinning at 30-60fps just to watch one is the
+// waste §6d is about — today the only such deadline is the quick-restart arm
+// expiring while its pulse is frozen.
+let pendingWakeId = 0;
+function parkLoop() {
+  frameLoop.stop();
+  suspendClock();
+  scheduleWake(quickRestartWakeMs(game));
+}
+
+// The frame function itself, so a bench can drive N frames synchronously and
+// time them. rAF is throttled to nothing in a background tab, which makes
+// wall-clock frame counting useless exactly where a headless check runs.
+exposeDebug('frame', frame);
+exposeDebug('clock', () => ({
+  render: renderClock(), ambientTick: ambientTickIndex(), still: ambientStill(settings),
+}));
+
+function scheduleWake(ms) {
+  if (pendingWakeId) { clearTimeout(pendingWakeId); pendingWakeId = 0; }
+  if (!Number.isFinite(ms)) return;
+  pendingWakeId = setTimeout(() => { pendingWakeId = 0; requestFrame(); }, Math.max(0, ms));
 }
 
 // Wake the rAF loop. Idempotent — safe to call from any input/lifecycle
@@ -867,7 +903,8 @@ function requestFrame() {
     }
     return;
   }
-  lastTime = 0;
+  if (pendingWakeId) { clearTimeout(pendingWakeId); pendingWakeId = 0; }
+  suspendClock();
   frameLoop.start();
 }
 
@@ -880,7 +917,8 @@ function forceRequestFrame() {
   // fresh one. Essential after device locks / tab suspensions, where the
   // browser can hand back an id that never fires.
   frameLoop.stop();
-  lastTime = 0;
+  if (pendingWakeId) { clearTimeout(pendingWakeId); pendingWakeId = 0; }
+  suspendClock();
   frameLoop.start();
 }
 
@@ -904,7 +942,7 @@ function flushPersist() {
 // moment so an LRU eviction can't lose state set in the last few frames.
 function stopLoop() {
   frameLoop.stop();
-  lastTime = 0;
+  suspendClock();
 }
 
 Arcade.onSuspend(() => {
@@ -1111,9 +1149,13 @@ attachInput(canvas, () => game, () => layout, {
     requestFrame();
   },
 });
-window.triggerAdminUpdate = () => {
+function onAdminUpdate() {
   settings = readSettings();
   setPerfModeOverride(SYSTEM_OVERRIDES.perfMode);
+  // The admin panel's sliders move the tuning objects the scene draws read
+  // (lantern opacity, bamboo profile, glow intensity, wind). None of those are
+  // worth a cache key of their own, and one hook here covers all of them.
+  invalidateSceneCache();
   if (layout) {
     layout.handedness = SYSTEM_OVERRIDES.handedness !== 'default'
       ? SYSTEM_OVERRIDES.handedness
@@ -1121,9 +1163,9 @@ window.triggerAdminUpdate = () => {
   }
   resize();
   forceRequestFrame();
-};
+}
 
-initAdminPanel();
+initAdminPanel(onAdminUpdate);
 resize();
 requestFrame();
 

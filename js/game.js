@@ -8,8 +8,6 @@ import {
   SPEED_MODE_PROJECTILE_SPEED, SPEED_MODE_DESCENT_DRIFT_SPEED,
   SPEED_MODE_SETTLE_ANIM_SEC, SPEED_MODE_DESCENT_TIME_FACTOR,
   SPEED_MODE_FIRE_COOLDOWN,
-  ENV_PARAMS, MOON_OVERRIDE,
-  getActivePackId,
   COMBO_POWERS,
   seededConfig,
 } from './constants.js';
@@ -17,6 +15,7 @@ import { mulberry32, pick } from './prng.js';
 import { createBoard, populateInitial, descend, isCleared, addLantern, populatePuzzle } from './board.js';
 import { makePatternState, patternRowColors, nextDescentRow, chooseStoneCells } from './seed-pattern.js';
 import { designForCell } from './stencil-packs.js';
+import { renderClock } from './clock.js';
 import { puzzleConfig } from './puzzles.js';
 
 import { popMatches, dropFloating, clearMoonburst } from './match.js';
@@ -346,13 +345,31 @@ export function fire(game, layout) {
   if (moonburst) { game.moonburstReady = false; game.moonburstUsed = (game.moonburstUsed | 0) + 1; }
   game.shotsFired = (game.shotsFired | 0) + 1;
 
-  const tSec = performance.now() / 1000;
+  // The render clock, not the wall clock: these stamps are consumed as
+  // animation elapsed (world.js reads `tSec - recoilTime`), and the loop parks
+  // itself the moment the board settles. A wall-clock stamp counts every
+  // parked, suspended and pocket-locked second as recoil that already played.
+  const tSec = renderClock();
   game.lastLaunchTime = tSec;
   game.recoilTime = tSec;
 }
 
+// How long the quick-restart button stays armed before it forgets. Named here
+// so input.js (which arms it), step() (which disarms it) and the HUD (which
+// draws the armed state) all measure the same window against the same clock.
+export const QUICK_RESTART_ARM_SEC = 3;
+
 export function step(game, dtSec, layout) {
   if (game.showModeIntroCard) return false;
+
+  // The arm expires here rather than in the draw call that used to own it.
+  // A renderer that mutates game state is a layering error on its own, and it
+  // also made the disarm unreachable: the loop parks on a settled board, and
+  // the frame that would have noticed the expiry is the frame that never ran.
+  if (game.quickRestartArmed
+      && renderClock() - game.quickRestartArmedTime > QUICK_RESTART_ARM_SEC) {
+    game.quickRestartArmed = false;
+  }
 
   if (game.phase === PHASE.AIMING && game.isPuzzleMode && game.queue.current === null) {
     let pzWon = false;
@@ -869,7 +886,7 @@ function advanceQueue(game) {
       game.queue.afterNext = null;
       game.queue.afterNextDesign = null;
     }
-    game.lastQueueAdvanceTime = performance.now() / 1000;
+    game.lastQueueAdvanceTime = renderClock();
     return;
   }
 
@@ -899,7 +916,7 @@ function advanceQueue(game) {
   game.queue.afterNextDesign = activePackId === 'random'
     ? designForCell(game.designSeed, 0x80000 + (game.queueDesignSeq = (game.queueDesignSeq | 0) + 1), nextColor)
     : null;
-  game.lastQueueAdvanceTime = performance.now() / 1000;
+  game.lastQueueAdvanceTime = renderClock();
 }
 
 // Re-exports so existing callers (renderer.js, tests) don't need to track
