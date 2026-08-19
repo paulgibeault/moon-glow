@@ -18,7 +18,8 @@ import {
 import {
   exploreState, ensureExplore, shuffleAll, setSeeds, pushSeedHistory, effectiveConfig,
 } from './seed-explore.js';
-import { advanceClock, suspendClock } from './clock.js';
+import { advanceClock, suspendClock, renderClock, ambientTickIndex } from './clock.js';
+import { countDebug, exposeDebug } from './debug.js';
 import { buildGameRecord, recordGame } from './telemetry.js';
 import { sfx, playMatch, startBed, stopBed, setBedPressure } from './sfx.js';
 
@@ -335,9 +336,7 @@ function startGame(g) {
   saveGameState(game);
   lastPhase = game.phase;
 
-  if (typeof window !== 'undefined') {
-    window.game = game;
-  }
+  exposeDebug('game', game);
 }
 
 function readSettings() {
@@ -833,6 +832,7 @@ function frame(_deltaMs, now) {
   // both halves of the frame have to agree on what time it is. dtMs is 0 on
   // the first frame after a park and capped otherwise, which is what keeps a
   // parked, suspended or pocket-locked gap out of every animation downstream.
+  countDebug('frame');
   const dtMs = advanceClock(now, ambientStill(settings));
   const dt = Math.min(0.05, dtMs / 1000);
   const menuOpen = isMenuPanelOpen();
@@ -873,6 +873,14 @@ function parkLoop() {
   suspendClock();
   scheduleWake(quickRestartWakeMs(game));
 }
+
+// The frame function itself, so a bench can drive N frames synchronously and
+// time them. rAF is throttled to nothing in a background tab, which makes
+// wall-clock frame counting useless exactly where a headless check runs.
+exposeDebug('frame', frame);
+exposeDebug('clock', () => ({
+  render: renderClock(), ambientTick: ambientTickIndex(), still: ambientStill(settings),
+}));
 
 function scheduleWake(ms) {
   if (pendingWakeId) { clearTimeout(pendingWakeId); pendingWakeId = 0; }

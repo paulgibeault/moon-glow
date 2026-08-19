@@ -17,6 +17,7 @@ import {
   getEffectiveDpr, PERF_MODE, ambientStill, ambientClock,
 } from './style.js';
 import { renderClock, ambientTickIndex } from '../clock.js';
+import { countDebug, debugFlags } from '../debug.js';
 
 // ─── Sky, moon, bamboo ──────────────────────────────────────────────────────
 
@@ -2179,12 +2180,13 @@ function paintScene(target, layout, game, settings) {
  */
 export function drawScene(ctx, layout, game, settings) {
   const still = ambientStill(settings);
-  const field = fieldSignature(game, layout, still);
+  const field = debugFlags.noSceneCache ? null : fieldSignature(game, layout, still);
   if (field === null) {
     // Something in the field is moving. Draw it live, and let go of the cache:
     // holding a full-screen backbuffer through a long cascade costs memory for
     // an image that is wrong on every frame of it.
     sceneCache = null;
+    countDebug('sceneLive');
     paintScene(ctx, layout, game, settings);
     return;
   }
@@ -2193,10 +2195,12 @@ export function drawScene(ctx, layout, game, settings) {
   const key = hashNum(backdropSignature(layout, game, settings, still), field);
   const cache = ensureSceneCanvas(viewW, viewH, getEffectiveDpr());
   if (cache.key !== key) {
+    countDebug('sceneRepaint');
     cache.ctx.clearRect(0, 0, viewW, viewH);
     paintScene(cache.ctx, layout, game, settings);
     cache.key = key;
   }
+  countDebug('sceneBlit');
   ctx.drawImage(cache.canvas, 0, 0, viewW, viewH);
 }
 

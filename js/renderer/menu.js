@@ -22,6 +22,7 @@ import {
 import { SEED_PATTERNS } from '../seed-pattern.js';
 import { loadTelemetry } from '../telemetry.js';
 import { seedTierMap, seedKey, difficultyRating, fairnessLabel } from '../difficulty.js';
+import { exposeDebug } from '../debug.js';
 
 const PANEL_BG    = 'rgba(20, 26, 50, 0.94)';
 const SCRIM_BG    = 'rgba(10, 15, 34, 0.62)';
@@ -66,9 +67,7 @@ const menuState = {
   cameFromRoot: false,
 };
 
-if (typeof window !== 'undefined') {
-  window.menuState = menuState;
-}
+exposeDebug('menuState', menuState);
 
 export function isMenuOpen() {
   return menuState.panel !== 'hidden' || menuState.fade > 0;
