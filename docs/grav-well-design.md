@@ -1,7 +1,7 @@
 # Gravity Well — design document
 
 **A faithful falling-block stacker for [Paul's Arcade](https://paulgibeault.github.io/).**
-`gameId: gravity-well` · repo: `paulgibeault/gravity-well` · target URL: `https://paulgibeault.github.io/gravity-well/`
+`gameId: grav-well` · repo: `paulgibeault/grav-well` · target URL: `https://paulgibeault.github.io/grav-well/`
 
 > *The playfield in a falling-block game has been called **the well** since the genre began. Ours has gravity. All's well that lands well.*
 
@@ -28,8 +28,11 @@ sound, and copy are ours.
 
 **Naming & IP hygiene.** Game mechanics are not protectable; names, logos and
 trade dress are — and the rights holder for the famous one polices hard,
-including `-tris`-suffixed names. So: the game is **Gravity Well**, pieces are
-called **tetrominoes** (the generic mathematical term, not the trademarked
+including `-tris`-suffixed names. So: the game is **Gravity Well** — display
+name; the repo slug and `gameId` are `grav-well`, and per §1 of the guide the
+catalog `id` must match the slug (fleet precedent: `si-syn` ↔ *Silicon
+Syndicate*). Pieces are called **tetrominoes** (the generic mathematical
+term, not the trademarked
 spelling), a 4-line clear is a **Quad**, and the word Tetris appears nowhere in
 the shipped product — not in UI copy, file names, or the catalog entry. This
 document may name it; the game never does. Standard piece hues (see §5 below)
@@ -51,11 +54,11 @@ storage discipline.
 
 ```json
 {
-  "id": "gravity-well",
+  "id": "grav-well",
   "name": "Gravity Well",
   "subtitle": "Falling Blocks",
-  "icon": "/gravity-well/icon.png",
-  "url": "/gravity-well/",
+  "icon": "/grav-well/icon.png",
+  "url": "/grav-well/",
   "inDevelopment": true,
   "profile": {
     "subtitle": "A Faithful Falling-Block Stacker",
@@ -64,7 +67,7 @@ storage discipline.
     "descBody": "A faithful modern stacker: 7-bag randomizer, SRS wall kicks, hold, ghost piece, T-spins, back-to-back and combo scoring. Marathon, Sprint 40, Ultra, Zen, and a shared Daily Well dig on the same seed for everyone.",
     "kicker": "All's well that lands well.",
     "tags": ["HTML5 Canvas", "JS", "ES Modules", "PWA", "Arcade SDK"],
-    "codeUrl": "https://github.com/paulgibeault/gravity-well"
+    "codeUrl": "https://github.com/paulgibeault/grav-well"
   }
 }
 ```
@@ -115,7 +118,7 @@ Shuffle uses the fleet PRNG (§7c of the guide): the vendored, byte-identical
 are reproducible from one u32 seed and the algorithm is pinned by the
 known-answer vectors the guide publishes (`makeRng(42)` →
 `0.6011037519201636, …`). Casual runs seed from entropy; Daily Well seeds from
-`dailySeed('gravity-well')` (device-local calendar day, per the platform
+`dailySeed('grav-well')` (device-local calendar day, per the platform
 rule).
 
 ### 2.4 Rotation — SRS with full kick tables
@@ -353,8 +356,8 @@ registered via `ArcadeAudioElements.registerPack({...})` →
 
 | Guide § | Commitment |
 | --- | --- |
-| §1 Identity | `gravity-well` everywhere: repo slug, catalog `id`, Pages path, storage namespace. `index.html` at repo root. |
-| §2 SDK | Evergreen `/arcade-sdk.js` + `Arcade.init({ gameId: 'gravity-well' })` in `<head>`; all boot after `await Arcade.ready`; no pre-ready state reads or writes. |
+| §1 Identity | `grav-well` everywhere: repo slug, catalog `id`, Pages path, storage namespace. `index.html` at repo root. |
+| §2 SDK | Evergreen `/arcade-sdk.js` + `Arcade.init({ gameId: 'grav-well' })` in `<head>`; all boot after `await Arcade.ready`; no pre-ready state reads or writes. |
 | §3 Storage | Every durable byte through `Arcade.state` (schema in §8 below); `getOrInit` for settings; `onStateReplaced` re-boots to the menu and re-hydrates snapshots (imported saves are treated as a fresh boot); storage-full left to the SDK's default toast. |
 | §3a Async stores | Not used in v1 — every save fits `Arcade.state`. Replay archives would be the first `Arcade.store` consumer (M4). |
 | §3b Sync | `settings` and mode snapshots opt in (`{ sync: true }`, all ≪ 64 KB); records/scores merge via the launcher already. |
@@ -370,9 +373,9 @@ registered via `ArcadeAudioElements.registerPack({...})` →
 | §7d Configs | Not in v1 (no packs/variants yet). |
 | §8 Standalone | Fully playable at the Pages URL; nothing gates on `framed`. |
 | §9 Sandbox | No direct `localStorage`/`indexedDB`/SW-registration assumptions; fullscreen only on user gesture; no top-navigation. |
-| §10 PWA | `manifest.json` scoped `/gravity-well/`; `sw.js` from the reference template: scope-filtered fetch, per-asset `add()`, `ignoreSearch`, own-prefix cache cleanup, `arcade:sw.skipWaiting` handler, CI-owned `const APP_VERSION = '0.0.0';`, generated precache markers. |
+| §10 PWA | `manifest.json` scoped `/grav-well/`; `sw.js` from the reference template: scope-filtered fetch, per-asset `add()`, `ignoreSearch`, own-prefix cache cleanup, `arcade:sw.skipWaiting` handler, CI-owned `const APP_VERSION = '0.0.0';`, generated precache markers. |
 | §11 Launcher presence | Catalog entry + icon per §1 above. |
-| §12 Local dev | Developed against `./dev.sh ../gravity-well`; `?dev=1` tracing during handshake work. |
+| §12 Local dev | Developed against `./dev.sh ../grav-well`; `?dev=1` tracing during handshake work. |
 | §13 Acceptance | `npm run acceptance` from the launcher against the staged game is an M2 exit gate. |
 | §13a CI/CD | Thin `pages.yml` caller (`version_bump: true`, `contents: write`); `tools/stage.mjs` (standard tracked-files staging) + byte-identical `verify-artifact.mjs` / `inject-precache.mjs`; tests in `tests/`, Node ≥ 24; Pages source = GitHub Actions. |
 
@@ -380,7 +383,7 @@ registered via `ArcadeAudioElements.registerPack({...})` →
 
 ## 8. Persistence schema
 
-All under `arcade.v1.gravity-well.*` via the SDK:
+All under `arcade.v1.grav-well.*` via the SDK:
 
 | Key | Contents | Flags |
 | --- | --- | --- |
@@ -425,9 +428,9 @@ hints needed), and the §13 acceptance checklist via `dev.sh`.
 ## 10. Repository layout
 
 ```
-gravity-well/
+grav-well/
 ├── index.html                  # SDK two-liner in <head>; entry at repo root
-├── manifest.json               # scope & start_url: /gravity-well/
+├── manifest.json               # scope & start_url: /grav-well/
 ├── sw.js                       # from launcher tools/templates/game-sw.js
 ├── icon.png                    # ≥512² card art (§1)
 ├── css/well.css
@@ -458,7 +461,7 @@ rename (per §2 of the guide).
 
 **M0 — Scaffold.** Starter-app copy renamed; thin CI caller green on an empty
 shell; contract gates pass; Pages source set to GitHub Actions.
-- [ ] Repo builds, deploys, and serves a page at `/gravity-well/`
+- [ ] Repo builds, deploys, and serves a page at `/grav-well/`
 
 **M1 — The faithful core.** §2 complete and standalone-playable: Marathon
 with SRS, 7-bag, hold, ghost, gravity curve, Extended Placement lock delay,
@@ -495,5 +498,3 @@ contract fits turn-paced garbage exchange well), replay capture & theater
    more faithful to precision play; gestures are what mobile players expect.
 4. **Endless cap** — clamp at 20G, or hard-stop Marathon at 15 and keep
    Endless a separate toggle (spec)?
-5. **The name** — `gravity-well` is claimed as of this issue; shout if a
-   different pun should win before M0 lands.
